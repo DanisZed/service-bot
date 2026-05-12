@@ -80,7 +80,7 @@ class DialogService:
         ctx.state = DialogState.SERVICE
         return "Привет! Давай оформим заявку. Опиши, пожалуйста, услугу, которая нужна."
 
-        async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
+    async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
         lines = [
             "📝 Новая заявка",
             f"👤 Пользователь ID: {user_id}",
