@@ -143,19 +143,25 @@ class DialogService:
         # Собираем клавиатуру выбора локации
         kb = [
             {
-                "type": "keyboard",
-                "buttons": [
-                    {
-                        "type": "button",
-                        "text": "Привезу в мастерскую",
-                        "payload": "loc:workshop",
-                    },
-                    {
-                        "type": "button",
-                        "text": "Нужен выезд мастера",
-                        "payload": "loc:client_address",
-                    },
-                ],
+                "type": "inline_keyboard",
+                "payload": {
+                    "buttons": [
+                        [
+                            {
+                                "type": "callback",
+                                "text": "Привезу в мастерскую",
+                                "payload": "loc:workshop",
+                            }
+                        ],
+                        [
+                            {
+                                "type": "callback",
+                                "text": "Нужен выезд мастера",
+                                "payload": "loc:client_address",
+                            }
+                        ],
+                    ]
+                },
             }
         ]
         return "Где удобнее выполнить ремонт?", kb
