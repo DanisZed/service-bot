@@ -4,3 +4,7 @@ httpx
 python-dotenv
 SQLAlchemy
 psycopg2-binary
+sqlalchemy[asyncio]
+asyncpg
+alembic
+psycopg2-binary
