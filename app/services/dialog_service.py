@@ -1,3 +1,4 @@
+# app/services/dialog_service.py
 from dataclasses import dataclass
 from typing import Dict, Optional, List, Tuple
 
@@ -7,9 +8,9 @@ from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
 class DialogState:
     IDLE = "idle"
     SERVICE = "service"
-    ADDRESS_MODE = "address_mode"        # выбор: мастерская / ввод адреса / сразу текстом
-    ADDRESS = "address"                  # ввод адреса
-    ADDRESS_DETAILS = "address_details"  # кв/подъезд
+    ADDRESS_MODE = "address_mode"
+    ADDRESS = "address"
+    ADDRESS_DETAILS = "address_details"
     DESCRIPTION = "description"
     SLOT = "slot"
     NAME = "name"
@@ -22,7 +23,7 @@ class DialogContext:
     state: str = DialogState.IDLE
     service: Optional[str] = None
     address: Optional[str] = None
-    address_details: Optional[str] = None  # кв/подъезд/этаж и т.п.
+    address_details: Optional[str] = None
     description: Optional[str] = None
     slot: Optional[str] = None
     name: Optional[str] = None
@@ -50,46 +51,48 @@ class DialogService:
 
     # ---------- Кнопки ----------
 
-    def _inline_keyboard(self, buttons: List[dict]) -> List[dict]:
+    def _inline_keyboard(self, rows: List[List[dict]]) -> List[dict]:
+        # rows: список рядов, в каждом ряду — список кнопок
         return [
             {
                 "type": "inline_keyboard",
                 "payload": {
-                    "buttons": buttons,
+                    "buttons": rows,
                 },
             }
         ]
 
     def _buttons_address_mode(self) -> List[dict]:
+        # Одна строка с двумя кнопками
         return self._inline_keyboard(
             [
-                {"type": "message", "text": "Мастерская"},
-                {"type": "message", "text": "Ввести адрес"},
+                [
+                    {"type": "message", "text": "Мастерская"},
+                    {"type": "message", "text": "Ввести адрес"},
+                ]
             ]
         )
 
     def _buttons_private_house(self) -> List[dict]:
+        # Одна строка с одной кнопкой
         return self._inline_keyboard(
             [
-                {"type": "message", "text": "Частный дом"},
+                [
+                    {"type": "message", "text": "Частный дом"},
+                ]
             ]
         )
 
     # ---------- Основная логика ----------
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
-        """
-        Возвращает (text, attachments), где attachments — массив объектов inline_keyboard для MAX.
-        """
         text_clean = text.strip()
         text_lower = text_clean.lower()
 
-        # Команды отмены
         if text_lower in ("/cancel", "отмена", "стоп"):
             self._sessions.pop(user_id, None)
             return "Ок, заявку отменил. Чтобы начать заново, напиши /start.", None
 
-        # Команда старта / новая заявка
         if text_lower in ("/start", "новая заявка", "заявка"):
             self._sessions[user_id] = DialogContext(state=DialogState.SERVICE)
             return (
@@ -99,7 +102,6 @@ class DialogService:
 
         ctx = self._get_ctx(user_id)
 
-        # Первый шаг: услуга
         if ctx.state == DialogState.SERVICE:
             ctx.service = text_clean
             ctx.state = DialogState.ADDRESS_MODE
@@ -112,7 +114,6 @@ class DialogService:
                 self._buttons_address_mode(),
             )
 
-        # Выбор режима адреса: мастерская или ручной ввод
         if ctx.state == DialogState.ADDRESS_MODE:
             if text_clean == "Мастерская":
                 ctx.address = "Мастерская"
@@ -131,7 +132,6 @@ class DialogService:
                     None,
                 )
 
-            # Если просто текст — считаем, что это адрес
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
             return (
@@ -141,7 +141,6 @@ class DialogService:
                 self._buttons_private_house(),
             )
 
-        # Ввод адреса (если выбрали «Ввести адрес»)
         if ctx.state == DialogState.ADDRESS:
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
@@ -152,7 +151,6 @@ class DialogService:
                 self._buttons_private_house(),
             )
 
-        # Уточнение по адресу: кв/подъезд или частный дом
         if ctx.state == DialogState.ADDRESS_DETAILS:
             if text_clean == "Частный дом":
                 ctx.address_details = None
@@ -164,7 +162,6 @@ class DialogService:
                 None,
             )
 
-        # Описание работ
         if ctx.state == DialogState.DESCRIPTION:
             ctx.description = text_clean
             ctx.state = DialogState.SLOT
@@ -173,13 +170,11 @@ class DialogService:
                 None,
             )
 
-        # Время/слот
         if ctx.state == DialogState.SLOT:
             ctx.slot = text_clean
             ctx.state = DialogState.NAME
             return "Ок. Как к тебе обращаться?", None
 
-        # Имя
         if ctx.state == DialogState.NAME:
             ctx.name = text_clean
             ctx.state = DialogState.PHONE
@@ -188,7 +183,6 @@ class DialogService:
                 None,
             )
 
-        # Телефон с валидацией
         if ctx.state == DialogState.PHONE:
             normalized = self._normalize_phone(text_clean)
             if not normalized:
@@ -206,7 +200,6 @@ class DialogService:
             self._sessions.pop(user_id, None)
             return reply, None
 
-        # Фоллбек — если состояние потеряли
         ctx.state = DialogState.SERVICE
         return (
             "Привет! Давай оформим заявку. Напиши, пожалуйста, какая услуга нужна.",
