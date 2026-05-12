@@ -4,7 +4,7 @@ import httpx
 MAX_API_BASE_URL = "https://platform-api.max.ru"
 
 MAX_BOT_TOKEN = "f9LHodD0cOJ-w1SxNh6DvVYwGrJbfhmqPq0biXFVWO5XtzC11k02pcl_qhAIIu9hG51oJ4mDqMrRioKNBkks"
-GROUP_CHAT_ID = -74638917986500  # твой group chat
+GROUP_CHAT_ID = 74638917986500  # твой group chat
 
 
 async def main():
