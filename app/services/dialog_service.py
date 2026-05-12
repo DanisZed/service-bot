@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict, Optional, List, Tuple
 
-from app.services.max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
+from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
 
 
 class DialogState:
