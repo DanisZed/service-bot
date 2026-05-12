@@ -282,25 +282,34 @@ class DialogService:
         tz: str = "Europe/Moscow",
     ) -> str:
         """
-        Строит ссылку "Добавить в Google Календарь" с датой и временем из FSM.
-        Использует format dates=START/END (локальное время + ctz).
+        Строит ссылку "Добавить в Google Календарь" максимально похоже на твой Telegram-формат:
+        - text=Заявка+№123
+        - details=Слить+воду+(П2+эт3+кв76).+Телефон:+7917...
+        - location=Адрес+с+плюсами
+        Плюсы в URL — это нормально, в самом календаре будут пробелы.
         """
         order_part = f"Заявка №{order_no}" if order_no is not None else "Заявка"
-        address_safe = (address or "").replace(" ", "+")
-        details_safe = (address_details or "").replace(" ", "+")
-        comment_safe = (comment or "").replace(" ", "+")
-        phone_safe = (phone or "").replace(" ", "")
+        # text: Заявка+№123
+        text_param = order_part.replace(" ", "+")
 
-        # собираем details: комментарий, уточнение, телефон
-        details = f"{comment_safe}" if comment_safe else ""
-        if details_safe:
-            if details:
-                details += "+"
-            details += f"({details_safe})"
-        if phone_safe:
-            if details:
-                details += ".+"
-            details += f"Телефон:+{phone_safe}"
+        # address/location
+        address_str = address or ""
+        address_param = address_str.replace(" ", "+")
+
+        # details: комментарий + (уточнение) + Телефон: +7917...
+        comment_str = comment or ""
+        details_str = comment_str
+
+        if address_details:
+            details_str += f" ({address_details})"
+
+        if phone:
+            if details_str:
+                details_str += ". "
+            details_str += f"Телефон: {phone}"
+
+        # в URL details тоже кодируем пробелы как +, но не трогаем остальное
+        details_param = details_str.replace(" ", "+")
 
         # дата/время
         if date_iso:
@@ -325,17 +334,18 @@ class DialogService:
 
         dates_param = f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
 
-        params = {
-            "action": "TEMPLATE",
-            "text": order_part,
-            "dates": dates_param,
-            "details": details,
-            "location": address or "",
-            "ctz": tz,
-        }
-
+        # собираем URL "по‑телеграмовски", без дополнительного urlencode
         base = "https://www.google.com/calendar/render"
-        return f"{base}?{urlencode(params, quote_via=quote_plus)}"
+        parts = [
+            "action=TEMPLATE",
+            f"text={text_param}",
+            f"dates={dates_param}",
+            f"details={details_param}",
+            f"location={address_param}",
+            f"ctz={tz}",
+        ]
+        google_url = base + "?" + "&".join(parts)
+        return google_url
 
     # ---------- Основная логика по тексту ----------
 
