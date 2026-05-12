@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Tuple
+from urllib.parse import urlencode, quote_plus
+import os
 
 from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
-import os
 
 
 class DialogState:
@@ -29,8 +30,9 @@ class DialogContext:
     address: Optional[str] = None
     address_details: Optional[str] = None  # кв/подъезд/этаж и т.п.
     description: Optional[str] = None
-    date: Optional[str] = None             # красивая дата: "Четверг, 15.05.26"
-    slot: Optional[str] = None             # время/слот: "09:00-10:00"
+    date_iso: Optional[str] = None        # дата в ISO: '2026-05-15'
+    date: Optional[str] = None            # красивая дата: 'Четверг, 15.05.26'
+    slot: Optional[str] = None            # время/слот: '09:00-10:00'
     name: Optional[str] = None
     phone: Optional[str] = None
 
@@ -257,6 +259,84 @@ class DialogService:
 
         return self._inline_keyboard(rows)
 
+    # ---------- Хелперы ссылок ----------
+
+    def _build_yandex_url(self, address: Optional[str]) -> Optional[str]:
+        """
+        HTTPS-ссылка для Яндекс.Навигатора (как в твоём Telegram-боте).
+        Если заявка в мастерскую — навигация не нужна.
+        """
+        if not address or address == "Мастерская":
+            return None
+        return f"https://yandex.ru/navi?text={address.replace(' ', '+')}"
+
+    def _build_google_calendar_url(
+        self,
+        order_no: Optional[int],
+        date_iso: Optional[str],
+        time_slot: Optional[str],
+        address: Optional[str],
+        address_details: Optional[str],
+        comment: Optional[str],
+        phone: Optional[str],
+        tz: str = "Europe/Moscow",
+    ) -> str:
+        """
+        Строит ссылку "Добавить в Google Календарь" с датой и временем из FSM.
+        Использует format dates=START/END (локальное время + ctz).
+        """
+        order_part = f"Заявка №{order_no}" if order_no is not None else "Заявка"
+        address_safe = (address or "").replace(" ", "+")
+        details_safe = (address_details or "").replace(" ", "+")
+        comment_safe = (comment or "").replace(" ", "+")
+        phone_safe = (phone or "").replace(" ", "")
+
+        # собираем details: комментарий, уточнение, телефон
+        details = f"{comment_safe}" if comment_safe else ""
+        if details_safe:
+            if details:
+                details += "+"
+            details += f"({details_safe})"
+        if phone_safe:
+            if details:
+                details += ".+"
+            details += f"Телефон:+{phone_safe}"
+
+        # дата/время
+        if date_iso:
+            try:
+                d = datetime.strptime(date_iso, "%Y-%m-%d")
+            except ValueError:
+                d = datetime.now()
+        else:
+            d = datetime.now()
+
+        if time_slot and "-" in time_slot:
+            start_str, end_str = time_slot.split("-", 1)
+            try:
+                start_dt = datetime.combine(d.date(), datetime.strptime(start_str, "%H:%M").time())
+                end_dt = datetime.combine(d.date(), datetime.strptime(end_str, "%H:%M").time())
+            except ValueError:
+                start_dt = d
+                end_dt = d + timedelta(hours=1)
+        else:
+            start_dt = datetime.combine(d.date(), datetime.strptime("10:00", "%H:%M").time())
+            end_dt = start_dt + timedelta(hours=1)
+
+        dates_param = f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
+
+        params = {
+            "action": "TEMPLATE",
+            "text": order_part,
+            "dates": dates_param,
+            "details": details,
+            "location": address or "",
+            "ctz": tz,
+        }
+
+        base = "https://www.google.com/calendar/render"
+        return f"{base}?{urlencode(params, quote_via=quote_plus)}"
+
     # ---------- Основная логика по тексту ----------
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
@@ -333,6 +413,7 @@ class DialogService:
             )
 
         if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
+            ctx.date_iso = None
             ctx.date = None
             ctx.slot = text_clean
             ctx.state = DialogState.NAME
@@ -401,6 +482,7 @@ class DialogService:
 
         if payload.startswith("slot:") and ctx.state == DialogState.SLOT:
             date_str = payload.split(":", 1)[1]
+            ctx.date_iso = date_str
             ctx.date = self._format_pretty_date(date_str)
             ctx.slot = None
             ctx.state = DialogState.SLOT_TIME
@@ -474,8 +556,59 @@ class DialogService:
 
         text = "\n".join(lines)
 
+        # Кнопки внизу заявки
+        yandex_url = self._build_yandex_url(ctx.address)
+        google_url = self._build_google_calendar_url(
+            order_no=ctx.request_id,
+            date_iso=ctx.date_iso,
+            time_slot=ctx.slot,
+            address=ctx.address,
+            address_details=ctx.address_details,
+            comment=ctx.description,
+            phone=ctx.phone,
+        )
+
+        buttons_rows: List[List[dict]] = []
+        row: List[dict] = []
+
+        # Навигация не показывается для "Мастерской" (yandex_url=None в этом случае)
+        if yandex_url:
+            row.append(
+                {
+                    "type": "link",
+                    "text": "Проложить маршрут (Яндекс)",
+                    "url": yandex_url,
+                }
+            )
+        if google_url:
+            row.append(
+                {
+                    "type": "link",
+                    "text": "Добавить в Google Календарь",
+                    "url": google_url,
+                }
+            )
+
+        if row:
+            buttons_rows.append(row)
+
+        attachments = None
+        if buttons_rows:
+            attachments = [
+                {
+                    "type": "inline_keyboard",
+                    "payload": {
+                        "buttons": buttons_rows,
+                    },
+                }
+            ]
+
         client = MaxClient()
-        await client.send_text_to_chat(chat_id=MAX_APPLICATIONS_CHAT_ID, text=text)
+        await client.send_text_to_chat(
+            chat_id=MAX_APPLICATIONS_CHAT_ID,
+            text=text,
+            attachments=attachments,
+        )
         await client.close()
 
 
