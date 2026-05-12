@@ -32,11 +32,11 @@ class MaxClient:
         return resp.json()
 
     async def send_text_to_chat(self, chat_id: int, text: str) -> dict:
-    params = {"chat_id": str(chat_id)}
-    payload = {"text": text}
-    resp = await self.client.post("/messages", params=params, json=payload)
-    resp.raise_for_status()
-    return resp.json()
+        params = {"chat_id": str(chat_id)}
+        payload = {"text": text}
+        resp = await self.client.post("/messages", params=params, json=payload)
+        resp.raise_for_status()
+        return resp.json()
 
     async def close(self):
         await self.client.aclose()
