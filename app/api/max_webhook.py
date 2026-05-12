@@ -4,23 +4,23 @@ from max_client import MaxClient
 
 router = APIRouter()
 
-MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"  # тот же, что в подписке
+MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"
 
 
 async def handle_message_created(event: dict):
     message = event.get("message", {})
-    recipient = message.get("recipient", {})
+    sender = message.get("sender", {})
     body = message.get("body", {})
 
-    chat_id = recipient.get("chat_id")
+    user_id = sender.get("user_id")
     text = body.get("text", "")
 
-    if not chat_id:
+    if not user_id:
         return
 
     client = MaxClient()
     reply_text = f"Привет! Я бот заявок. Ты написал: {text}"
-    await client.send_text(chat_id=chat_id, text=reply_text)
+    await client.send_text_to_user(user_id=user_id, text=reply_text)
     await client.close()
 
 

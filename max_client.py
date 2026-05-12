@@ -5,7 +5,6 @@ import httpx
 
 MAX_API_BASE_URL = "https://platform-api.max.ru"
 
-# Токен бота берём из переменной окружения
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN")
 
 
@@ -24,16 +23,10 @@ class MaxClient:
             timeout=10.0,
         )
 
-    async def send_text(self, chat_id: int, text: str) -> dict:
-        payload = {
-            "recipient": {
-                "chat_id": chat_id,
-            },
-            "message": {
-                "text": text,
-            },
-        }
-        resp = await self.client.post("/messages", json=payload)
+    async def send_text_to_user(self, user_id: int, text: str) -> dict:
+        params = {"user_id": str(user_id)}
+        payload = {"text": text}
+        resp = await self.client.post("/messages", params=params, json=payload)
         resp.raise_for_status()
         return resp.json()
 
