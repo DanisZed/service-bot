@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Tuple
 
 from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
+import os
 
 
 class DialogState:
@@ -22,6 +23,8 @@ class DialogState:
 @dataclass
 class DialogContext:
     state: str = DialogState.IDLE
+    request_id: Optional[int] = None      # номер заявки из БД
+    chat_id: Optional[int] = None         # chat_id диалога в MAX
     service: Optional[str] = None
     address: Optional[str] = None
     address_details: Optional[str] = None  # кв/подъезд/этаж и т.п.
@@ -57,6 +60,9 @@ TIME_SLOTS = [
     ("17:00", "18:00"),
 ]
 
+# твой личный user_id в MAX, чтобы не показывать строку про пользователя
+MY_USER_ID = int(os.getenv("MAX_OWNER_USER_ID", "0"))
+
 
 class DialogService:
     def __init__(self):
@@ -66,6 +72,13 @@ class DialogService:
         if user_id not in self._sessions:
             self._sessions[user_id] = DialogContext(state=DialogState.SERVICE)
         return self._sessions[user_id]
+
+    def set_chat_id(self, user_id: int, chat_id: Optional[int]) -> None:
+        """
+        Вызывается из вебхука при message_created, чтобы сохранить chat_id в контекст.
+        """
+        ctx = self._get_ctx(user_id)
+        ctx.chat_id = chat_id
 
     def _normalize_phone(self, raw: str) -> Optional[str]:
         digits = "".join(ch for ch in raw if ch.isdigit())
@@ -158,8 +171,8 @@ class DialogService:
 
         for offset in range(6):
             d = today + timedelta(days=offset)
-            iso_str = d.isoformat()  # 2026-05-12
-            weekday_idx = d.weekday()  # Monday=0
+            iso_str = d.isoformat()
+            weekday_idx = d.weekday()
             wd_short = WEEKDAY_SHORT_RU[weekday_idx]
             if offset == 0:
                 label = "Сегодня"
@@ -254,12 +267,10 @@ class DialogService:
         text_clean = text.strip()
         text_lower = text_clean.lower()
 
-        # Команды отмены
         if text_lower in ("/cancel", "отмена", "стоп"):
             self._sessions.pop(user_id, None)
             return "Ок, заявку отменил. Чтобы начать заново, напиши /start.", None
 
-        # Команда старта / новая заявка
         if text_lower in ("/start", "новая заявка", "заявка"):
             self._sessions[user_id] = DialogContext(state=DialogState.SERVICE)
             return (
@@ -269,7 +280,6 @@ class DialogService:
 
         ctx = self._get_ctx(user_id)
 
-        # Первый шаг: услуга
         if ctx.state == DialogState.SERVICE:
             ctx.service = text_clean
             ctx.state = DialogState.ADDRESS_MODE
@@ -282,7 +292,6 @@ class DialogService:
                 self._buttons_address_mode(),
             )
 
-        # Если пользователь в ADDRESS_MODE и ввёл текст руками — считаем это адресом
         if ctx.state == DialogState.ADDRESS_MODE:
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
@@ -293,7 +302,6 @@ class DialogService:
                 self._buttons_private_house(),
             )
 
-        # Ввод адреса (если до этого нажал «Ввести адрес», а теперь пишет текст)
         if ctx.state == DialogState.ADDRESS:
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
@@ -304,7 +312,6 @@ class DialogService:
                 self._buttons_private_house(),
             )
 
-        # Уточнение по адресу: кв/подъезд (текстом, если не нажал кнопку)
         if ctx.state == DialogState.ADDRESS_DETAILS:
             if text_clean == "Частный дом":
                 ctx.address_details = None
@@ -316,7 +323,6 @@ class DialogService:
                 None,
             )
 
-        # Описание → выбор даты
         if ctx.state == DialogState.DESCRIPTION:
             ctx.description = text_clean
             ctx.state = DialogState.SLOT
@@ -326,7 +332,6 @@ class DialogService:
                 self._buttons_slot_dates(),
             )
 
-        # Текстовый ввод слота (дата/время) как фоллбек — минуя кнопки
         if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
             ctx.date = None
             ctx.slot = text_clean
@@ -358,7 +363,6 @@ class DialogService:
             self._sessions.pop(user_id, None)
             return reply, None
 
-        # Фоллбек
         ctx.state = DialogState.SERVICE
         return (
             "Привет! Давай оформим заявку. Напиши, пожалуйста, какая услуга нужна.",
@@ -368,17 +372,8 @@ class DialogService:
     # ---------- Логика по callback (payload) ----------
 
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
-        """
-        Обработка нажатий на callback-кнопки (message_callback).
-        payload — строка вида:
-        - 'address_mode:workshop'
-        - 'address_details:private_house'
-        - 'slot:YYYY-MM-DD'
-        - 'slot_time:YYYY-MM-DD:09:00-10:00'
-        """
         ctx = self._get_ctx(user_id)
 
-        # адрес: мастерская / ввод адреса
         if payload == "address_mode:workshop" and ctx.state == DialogState.ADDRESS_MODE:
             ctx.address = "Мастерская"
             ctx.address_details = None
@@ -404,9 +399,8 @@ class DialogService:
                 None,
             )
 
-        # выбор даты: slot:YYYY-MM-DD
         if payload.startswith("slot:") and ctx.state == DialogState.SLOT:
-            date_str = payload.split(":", 1)[1]  # '2026-05-15'
+            date_str = payload.split(":", 1)[1]
             ctx.date = self._format_pretty_date(date_str)
             ctx.slot = None
             ctx.state = DialogState.SLOT_TIME
@@ -416,10 +410,8 @@ class DialogService:
                 await self._buttons_time_slots(date_str),
             )
 
-        # выбор времени: slot_time:YYYY-MM-DD:09:00-10:00
         if payload.startswith("slot_time:") and ctx.state == DialogState.SLOT_TIME:
             _, rest = payload.split(":", 1)
-            # rest: '2026-05-15:09:00-10:00'
             try:
                 date_part, time_part = rest.split(":", 1)
             except ValueError:
@@ -436,12 +428,10 @@ class DialogService:
                     await self._buttons_time_slots(date_part),
                 )
 
-            # ctx.date уже хранит красивую дату
-            ctx.slot = time_part  # "09:00-10:00"
+            ctx.slot = time_part
             ctx.state = DialogState.NAME
             return "Ок. Как к тебе обращаться?", None
 
-        # Если callback не соответствует текущему состоянию
         return (
             "Команда уже не актуальна. Напиши, пожалуйста, текстом, что хочешь сделать.",
             None,
@@ -450,13 +440,19 @@ class DialogService:
     # ---------- Отправка заявки в чат ----------
 
     async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
+        request_no = ctx.request_id if ctx.request_id is not None else "—"
+        created_at = datetime.now().strftime("%d.%m.%y")
+
         lines = [
-            "📝 Новая заявка",
-            f"👤 Пользователь ID: {user_id}",
-            f"🔧 Услуга: {ctx.service or '—'}",
+            f"📝 Заявка № {request_no} от {created_at}",
         ]
 
-        # Адрес / мастерская
+        # Пользователь: если это ты — строку не показываем
+        if user_id != MY_USER_ID:
+            lines.append(f"👤 Пользователь ID: {user_id}")
+
+        lines.append(f"🔧 Услуга: {ctx.service or '—'}")
+
         if ctx.address == "Мастерская":
             lines.append("🏭 Место выполнения: мастерская")
         elif ctx.address:
@@ -467,13 +463,11 @@ class DialogService:
         if ctx.address_details:
             lines.append(f"📌 Уточнение по адресу: {ctx.address_details}")
 
-        # Дата и время
         if ctx.date:
             lines.append(f"📅 Дата: {ctx.date}")
         if ctx.slot:
             lines.append(f"⏰ Время/слот: {ctx.slot}")
 
-        # Описание и контакты
         lines.append(f"📄 Описание: {ctx.description or '—'}")
         lines.append(f"🙋‍♂️ Имя: {ctx.name or '—'}")
         lines.append(f"📞 Телефон: {ctx.phone or '—'}")
