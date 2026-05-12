@@ -1,0 +1,24 @@
+я хочу сделать более профессионально проверь и поправь код async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
+        lines = [
+            "📝 Новая заявка",
+            f"👤 Пользователь ID: {user_id}",
+            f"🔧 Услуга: {ctx.service}",            
+        ]
+        if ctx.address == "Мастерская":
+        
+            lines.append(f"🏭 Мастерская")
+        else:
+           lines.append(f"📍 Адрес: {ctx.address}")    
+
+        if ctx.address_details:
+            lines.append(f"📌 Уточнение: {ctx.address_details}")
+
+        lines.extend(
+            [
+                f"📄 Описание: {ctx.description}",
+                f"📅 Дата: {ctx.date}",
+                f"⏰ Время/слот: {ctx.slot}",
+                f"🙋‍♂️ Имя: {ctx.name}",
+                f"📞 Телефон: {ctx.phone}",
+            ]
+        )
