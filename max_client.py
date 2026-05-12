@@ -6,6 +6,7 @@ import httpx
 MAX_API_BASE_URL = "https://platform-api.max.ru"
 
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN")
+MAX_APPLICATIONS_CHAT_ID = int(os.getenv("MAX_APPLICATIONS_CHAT_ID", "-74626173921476"))
 
 
 class MaxClient:
@@ -27,6 +28,19 @@ class MaxClient:
         params = {"user_id": str(user_id)}
         payload = {"text": text}
         resp = await self.client.post("/messages", params=params, json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def send_text_to_chat(self, chat_id: int, text: str) -> dict:
+        payload = {
+            "recipient": {
+                "chat_id": chat_id,
+            },
+            "message": {
+                "text": text,
+            },
+        }
+        resp = await self.client.post("/messages", json=payload)
         resp.raise_for_status()
         return resp.json()
 
