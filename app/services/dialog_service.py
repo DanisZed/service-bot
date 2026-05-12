@@ -579,28 +579,29 @@ class DialogService:
         )
 
         buttons_rows: List[List[dict]] = []
-        row: List[dict] = []
 
-        # Навигация не показывается для "Мастерской" (yandex_url=None в этом случае)
+        # каждый ряд — отдельный список с одной кнопкой
         if yandex_url:
-            row.append(
-                {
-                    "type": "link",
-                    "text": "Проложить маршрут (Яндекс)",
-                    "url": yandex_url,
-                }
-            )
-        if google_url:
-            row.append(
-                {
-                    "type": "link",
-                    "text": "Добавить в Google Календарь",
-                    "url": google_url,
-                }
+            buttons_rows.append(
+                [
+                    {
+                        "type": "link",
+                        "text": "Проложить маршрут (Яндекс)",
+                        "url": yandex_url,
+                    }
+                ]
             )
 
-        if row:
-            buttons_rows.append(row)
+        if google_url:
+            buttons_rows.append(
+                [
+                    {
+                        "type": "link",
+                        "text": "Добавить в Google Календарь",
+                        "url": google_url,
+                    }
+                ]
+            )
 
         attachments = None
         if buttons_rows:
