@@ -24,7 +24,7 @@ class MaxClient:
                 "Authorization": self.token,
                 "Content-Type": "application/json",
             },
-            timeout=10.0,
+            timeout=20.0,  # увеличенный таймаут
         )
 
     async def send_text_to_user(
@@ -38,7 +38,17 @@ class MaxClient:
         if attachments:
             payload["attachments"] = attachments
 
-        resp = await self.client.post("/messages", params=params, json=payload)
+        try:
+            resp = await self.client.post("/messages", params=params, json=payload)
+        except httpx.ConnectTimeout:
+            logger.error("MAX API ConnectTimeout (user) user_id=%s", user_id)
+            return {}
+        except httpx.ReadTimeout:
+            logger.error("MAX API ReadTimeout (user) user_id=%s", user_id)
+            return {}
+        except httpx.NetworkError as e:
+            logger.error("MAX API NetworkError (user) user_id=%s: %s", user_id, e)
+            return {}
 
         if resp.status_code >= 400:
             try:
@@ -60,7 +70,17 @@ class MaxClient:
         if attachments:
             payload["attachments"] = attachments
 
-        resp = await self.client.post("/messages", params=params, json=payload)
+        try:
+            resp = await self.client.post("/messages", params=params, json=payload)
+        except httpx.ConnectTimeout:
+            logger.error("MAX API ConnectTimeout (chat) chat_id=%s", chat_id)
+            return {}
+        except httpx.ReadTimeout:
+            logger.error("MAX API ReadTimeout (chat) chat_id=%s", chat_id)
+            return {}
+        except httpx.NetworkError as e:
+            logger.error("MAX API NetworkError (chat) chat_id=%s: %s", chat_id, e)
+            return {}
 
         if resp.status_code >= 400:
             try:
@@ -88,7 +108,17 @@ class MaxClient:
         if notification is not None:
             payload["notification"] = notification
 
-        resp = await self.client.post("/answers", params=params, json=payload)
+        try:
+            resp = await self.client.post("/answers", params=params, json=payload)
+        except httpx.ConnectTimeout:
+            logger.error("MAX API ConnectTimeout (answer_callback) callback_id=%s", callback_id)
+            return {}
+        except httpx.ReadTimeout:
+            logger.error("MAX API ReadTimeout (answer_callback) callback_id=%s", callback_id)
+            return {}
+        except httpx.NetworkError as e:
+            logger.error("MAX API NetworkError (answer_callback) callback_id=%s: %s", callback_id, e)
+            return {}
 
         if resp.status_code >= 400:
             try:
