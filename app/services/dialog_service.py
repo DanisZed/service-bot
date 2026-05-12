@@ -306,7 +306,7 @@ class DialogService:
         if phone:
             if details_str:
                 details_str += ". "
-            details_str += f"Телефон: {phone}"
+            details_str += f"Телефон: +{phone}"
 
         # в URL details тоже кодируем пробелы как +, но не трогаем остальное
         details_param = details_str.replace(" ", "+")
