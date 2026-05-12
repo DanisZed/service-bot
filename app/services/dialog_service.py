@@ -1,10 +1,6 @@
-# app/services/dialog_service.py
 from dataclasses import dataclass
-from typing import Dict, Optional, List, Tuple
 from datetime import datetime, timedelta
-
-# вверху файла, рядом с импортами
-WEEKDAY_SHORT_RU = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]  # Monday=0
+from typing import Dict, Optional, List, Tuple
 
 from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
 
@@ -16,7 +12,8 @@ class DialogState:
     ADDRESS = "address"                  # ввод адреса
     ADDRESS_DETAILS = "address_details"  # кв/подъезд
     DESCRIPTION = "description"
-    SLOT = "slot"
+    SLOT = "slot"                        # выбор даты
+    SLOT_TIME = "slot_time"              # выбор времени
     NAME = "name"
     PHONE = "phone"
     CONFIRMED = "confirmed"
@@ -29,9 +26,26 @@ class DialogContext:
     address: Optional[str] = None
     address_details: Optional[str] = None  # кв/подъезд/этаж и т.п.
     description: Optional[str] = None
-    slot: Optional[str] = None
+    slot: Optional[str] = None             # дата или дата+время
     name: Optional[str] = None
     phone: Optional[str] = None
+
+
+# Пн=0 ... Вс=6
+WEEKDAY_SHORT_RU = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+
+# 9 часовых слотов
+TIME_SLOTS = [
+    ("09:00", "10:00"),
+    ("10:00", "11:00"),
+    ("11:00", "12:00"),
+    ("12:00", "13:00"),
+    ("13:00", "14:00"),
+    ("14:00", "15:00"),
+    ("15:00", "16:00"),
+    ("16:00", "17:00"),
+    ("17:00", "18:00"),
+]
 
 
 class DialogService:
@@ -53,7 +67,24 @@ class DialogService:
             return "+7" + digits
         return None
 
-    # ---------- Кнопки (callback) ----------
+    # ---------- Заглушка БД для занятых слотов ----------
+
+    async def _get_booked_slots_for_date(self, date_str: str) -> set[str]:
+        """
+        TODO: заменить на реальный запрос к БД.
+
+        Должна возвращать множество payload'ов занятых слотов вида:
+        'slot_time:YYYY-MM-DD:09:00-10:00'
+        """
+        # пример для будущей реализации:
+        # bookings = await booking_repo.get_time_slots_for_date(date_str)
+        # return {
+        #     f"slot_time:{date_str}:{b.start}-{b.end}"
+        #     for b in bookings
+        # }
+        return set()
+
+    # ---------- Кнопки ----------
 
     def _inline_keyboard(self, rows: List[List[dict]]) -> List[dict]:
         # rows: список рядов; в каждом ряду — список кнопок
@@ -99,9 +130,46 @@ class DialogService:
                 ]
             ]
         )
-    def _buttons_slot(self) -> List[dict]:
-        options = self._build_slot_options()  # 6 элементов
-        # разобьём на два ряда по 3
+
+    def _build_slot_options(self) -> List[dict]:
+        """
+        Строит список слотов на ближайшие 6 дней:
+        [
+          {"text": "Сегодня", "payload": "slot:2026-05-12"},
+          {"text": "Завтра", "payload": "slot:2026-05-13"},
+          {"text": "Чт, 15.05", "payload": "slot:2026-05-15"},
+          ...
+        ]
+        """
+        today = datetime.now().date()
+        options: List[dict] = []
+
+        for offset in range(6):
+            d = today + timedelta(days=offset)
+            iso_str = d.isoformat()  # 2026-05-12
+            weekday_idx = d.weekday()  # Monday=0
+            wd = WEEKDAY_SHORT_RU[weekday_idx]
+            if offset == 0:
+                label = "Сегодня"
+            elif offset == 1:
+                label = "Завтра"
+            else:
+                label = f"{wd.capitalize()}, {d.strftime('%d.%m')}"
+
+            options.append(
+                {
+                    "text": label,
+                    "payload": f"slot:{iso_str}",
+                }
+            )
+
+        return options
+
+    def _buttons_slot_dates(self) -> List[dict]:
+        """
+        Клавиатура для выбора даты: 6 ближайших дней, 2 ряда по 3.
+        """
+        options = self._build_slot_options()
         row1 = options[0:3]
         row2 = options[3:6]
 
@@ -133,43 +201,36 @@ class DialogService:
 
         return self._inline_keyboard(rows)
 
-    def _build_slot_options(self) -> List[dict]:
+    async def _buttons_time_slots(self, date_str: str) -> List[dict]:
         """
-        Строит список слотов на ближайшие 6 дней:
-        [
-          {"text": "Сегодня", "payload": "slot:2026-05-12"},
-          {"text": "Завтра", "payload": "slot:2026-05-13"},
-          {"text": "Чт, 15.05", "payload": "slot:2026-05-15"},
-          ...
-        ]
+        Клавиатура для выбора времени на указанную дату.
+        9 слотов, 3 ряда по 3. Для занятых слотов текст 'ЗАНЯТО'.
+        payload слота: slot_time:<date>:<start>-<end>
         """
-        today = datetime.now().date()
-        options: List[dict] = []
+        booked = await self._get_booked_slots_for_date(date_str)
 
-        for offset in range(6):
-            d = today + timedelta(days=offset)
-            iso_str = d.isoformat()  # 2026-05-12
-            weekday_idx = d.weekday()  # Monday=0
-            wd = WEEKDAY_SHORT_RU[weekday_idx]
-            label: str
-
-            if offset == 0:
-                label = "Сегодня"
-            elif offset == 1:
-                label = "Завтра"
+        buttons: List[dict] = []
+        for start, end in TIME_SLOTS:
+            payload = f"slot_time:{date_str}:{start}-{end}"
+            if payload in booked:
+                text = "ЗАНЯТО"
             else:
-                label = f"{wd.capitalize()}, {d.strftime('%d.%m')}"
+                text = f"{start}-{end}"
 
-            options.append(
+            buttons.append(
                 {
-                    "text": label,
-                    "payload": f"slot:{iso_str}",
+                    "type": "callback",
+                    "text": text,
+                    "payload": payload,
+                    "intent": "default",
                 }
             )
 
-        return options
-    
-    
+        rows: List[List[dict]] = []
+        for i in range(0, len(buttons), 3):
+            rows.append(buttons[i : i + 3])
+
+        return self._inline_keyboard(rows)
 
     # ---------- Основная логика по тексту ----------
 
@@ -243,16 +304,18 @@ class DialogService:
                 None,
             )
 
+        # Описание → выбор даты
         if ctx.state == DialogState.DESCRIPTION:
             ctx.description = text_clean
             ctx.state = DialogState.SLOT
             return (
                 "Принял описание. Когда удобно выполнить услугу?\n"
                 "Можешь выбрать один из ближайших дней ниже или написать дату и время текстом.",
-                self._buttons_slot(),
+                self._buttons_slot_dates(),
             )
 
-        if ctx.state == DialogState.SLOT:
+        # Текстовый ввод слота (дата/время) как фоллбек — минуя кнопки
+        if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
             ctx.slot = text_clean
             ctx.state = DialogState.NAME
             return "Ок. Как к тебе обращаться?", None
@@ -294,10 +357,15 @@ class DialogService:
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
         """
         Обработка нажатий на callback-кнопки (message_callback).
-        payload — строка вида 'address_mode:workshop', 'address_details:private_house' и т.п.
+        payload — строка вида:
+        - 'address_mode:workshop'
+        - 'address_details:private_house'
+        - 'slot:YYYY-MM-DD'
+        - 'slot_time:YYYY-MM-DD:09:00-10:00'
         """
         ctx = self._get_ctx(user_id)
 
+        # адрес: мастерская / ввод адреса
         if payload == "address_mode:workshop" and ctx.state == DialogState.ADDRESS_MODE:
             ctx.address = "Мастерская"
             ctx.address_details = None
@@ -322,36 +390,49 @@ class DialogService:
                 "Принял. Теперь опиши, пожалуйста, что нужно сделать (детально).",
                 None,
             )
-        # слоты: payload вида 'slot:2026-05-15'
+
+        # выбор даты: slot:YYYY-MM-DD
         if payload.startswith("slot:") and ctx.state == DialogState.SLOT:
             date_str = payload.split(":", 1)[1]  # '2026-05-15'
-            try:
-                d = datetime.strptime(date_str, "%Y-%m-%d").date()
-                weekday_idx = d.weekday()
-                wd = WEEKDAY_SHORT_RU[weekday_idx]
-                # подпись как в кнопке: Чт, 15.05
-                label = f"{wd.capitalize()}, {d.strftime('%d.%m')}"
-                # но для сегодня/завтра лучше сохранить так и так
-                today = datetime.now().date()
-                if d == today:
-                    ctx.slot = "Сегодня"
-                elif d == today + timedelta(days=1):
-                    ctx.slot = "Завтра"
-                else:
-                    ctx.slot = label
-            except ValueError:
-                # если вдруг дата кривой формата, просто сохраним raw
-                ctx.slot = date_str
+            ctx.slot = date_str  # пока храним только дату
+            ctx.state = DialogState.SLOT_TIME
 
+            return (
+                f"Выбери удобное время для {date_str}:",
+                await self._buttons_time_slots(date_str),
+            )
+
+        # выбор времени: slot_time:YYYY-MM-DD:09:00-10:00
+        if payload.startswith("slot_time:") and ctx.state == DialogState.SLOT_TIME:
+            _, rest = payload.split(":", 1)
+            # rest: '2026-05-15:09:00-10:00'
+            try:
+                date_part, time_part = rest.split(":", 1)
+            except ValueError:
+                # fallback, если что-то пошло не так
+                ctx.slot = rest
+                ctx.state = DialogState.NAME
+                return "Ок. Как к тебе обращаться?", None
+
+            booked = await self._get_booked_slots_for_date(date_part)
+            payload_full = f"slot_time:{date_part}:{time_part}"
+
+            if payload_full in booked:
+                # слот уже занят — обновляем список
+                return (
+                    "Увы, этот слот уже занят. Выбери, пожалуйста, другой:",
+                    await self._buttons_time_slots(date_part),
+                )
+
+            ctx.slot = f"{date_part} {time_part}"
             ctx.state = DialogState.NAME
             return "Ок. Как к тебе обращаться?", None
-        
-        # Если callback пришёл не к тому состоянию — просто скажем, что команда неактуальна
+
+        # Если callback не соответствует текущему состоянию
         return (
             "Команда уже не актуальна. Напиши, пожалуйста, текстом, что хочешь сделать.",
             None,
         )
-    
 
     # ---------- Отправка заявки в чат ----------
 
