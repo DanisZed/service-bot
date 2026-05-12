@@ -452,7 +452,8 @@ class DialogService:
                 "client_id": None,
                 "client_name": ctx.name,
                 "client_phone": ctx.phone,
-                "main_category": "legacy",          # заглушка для старого сценария
+                # заглушки для обязательных полей схемы
+                "main_category": "legacy",
                 "subtype": "legacy_service",
                 "custom_device": ctx.service,
                 "service_title": ctx.service,

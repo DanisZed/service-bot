@@ -28,7 +28,7 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
         logger.warning("message_created without user_id: %s", event)
         return
 
-    # передаём chat_id в диалог
+    # передаём chat_id в диалог, чтобы он попал в ServiceRequest
     if chat_id is not None:
         dialog_service.set_chat_id(user_id, chat_id)
 
