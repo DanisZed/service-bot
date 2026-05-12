@@ -1,8 +1,10 @@
 import os
+import logging
 from typing import Optional, List
 
 import httpx
 
+logger = logging.getLogger(__name__)
 
 MAX_API_BASE_URL = "https://platform-api.max.ru"
 
@@ -37,6 +39,14 @@ class MaxClient:
             payload["attachments"] = attachments
 
         resp = await self.client.post("/messages", params=params, json=payload)
+
+        if resp.status_code >= 400:
+            # логируем тело ответа, чтобы видеть причину 400 от MAX
+            try:
+                logger.error("MAX API error (user): %s", resp.json())
+            except Exception:
+                logger.error("MAX API error (user): %s", resp.text)
+
         resp.raise_for_status()
         return resp.json()
 
@@ -52,6 +62,13 @@ class MaxClient:
             payload["attachments"] = attachments
 
         resp = await self.client.post("/messages", params=params, json=payload)
+
+        if resp.status_code >= 400:
+            try:
+                logger.error("MAX API error (chat): %s", resp.json())
+            except Exception:
+                logger.error("MAX API error (chat): %s", resp.text)
+
         resp.raise_for_status()
         return resp.json()
 

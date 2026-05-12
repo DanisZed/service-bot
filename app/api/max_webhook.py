@@ -19,10 +19,18 @@ async def handle_message_created(event: dict):
     if not user_id:
         return
 
-    reply_text = await dialog_service.handle_message(user_id=user_id, text=text)
+    # dialog_service теперь возвращает (text, attachments)
+    reply_text, attachments = await dialog_service.handle_message(
+        user_id=user_id,
+        text=text,
+    )
 
     client = MaxClient()
-    await client.send_text_to_user(user_id=user_id, text=reply_text)
+    await client.send_text_to_user(
+        user_id=user_id,
+        text=reply_text,
+        attachments=attachments,
+    )
     await client.close()
 
 
