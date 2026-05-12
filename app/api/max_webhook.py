@@ -1,11 +1,14 @@
+# app/api/max_webhook.py
+import logging
+
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 
 from max_client import MaxClient
 from app.services.dialog_service import dialog_service
-import logging
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"
 
@@ -38,18 +41,30 @@ async def handle_message_created(event: dict):
 async def handle_message_callback(event: dict):
     """
     Обработка нажатия на callback-кнопку (update_type == 'message_callback').
-    Ориентируемся на структуру Update из доки MAX:
-    updates[i].callback.sender.user_id
-    updates[i].callback.callback_id
-    updates[i].callback.payload
+
+    Формат из твоего лога:
+    {
+      "callback": {
+        "timestamp": ...,
+        "callback_id": "...",
+        "user": { "user_id": 40398020, ... },
+        "payload": "address_mode:workshop"
+      },
+      "message": {...},
+      "timestamp": ...,
+      "user_locale": "ru",
+      "update_type": "message_callback"
+    }
     """
-    callback = event.get("callback", {})
-    sender = callback.get("sender", {}) or {}
-    user_id = sender.get("user_id")
+    callback = event.get("callback", {}) or {}
+    user = callback.get("user", {}) or {}
+
+    user_id = user.get("user_id")
     callback_id = callback.get("callback_id")
     payload = callback.get("payload")
 
     if not user_id or not callback_id or payload is None:
+        logger.warning("Invalid message_callback event: %s", event)
         return
 
     reply_text, attachments = await dialog_service.handle_callback(
@@ -72,26 +87,22 @@ async def handle_message_callback(event: dict):
 
 @router.post("/max/webhook")
 async def max_webhook(request: Request, background_tasks: BackgroundTasks):
-    # если у тебя есть проверка секрета, оставь её
     body = await request.json()
-    logger.warning("MAX WEBHOOK BODY: %s", body)
+    logger.info("MAX WEBHOOK BODY: %s", body)
 
-    # По доке Update - массив updates. Но некоторые интеграции шлют один update.
-    # Ориентируемся на то, что есть в твоём боте.
-    updates = body.get("updates") or []
-    if not updates and "update_type" in body:
-        # fallback: одиночный update без массива
-        updates = [body]
+    # Если у тебя есть проверка секрета — можно тут добавить
+    # например, по header'у X-Hub-Signature или параметру
+    # я оставляю MAX_WEBHOOK_SECRET неиспользованным, как у тебя сейчас.
 
-    for event in updates:
-        update_type = event.get("update_type")
+    # У тебя приходит одиночный объект с полем update_type, без массива updates.
+    update_type = body.get("update_type")
 
-        if update_type == "message_created":
-            background_tasks.add_task(handle_message_created, event)
-        elif update_type == "message_callback":
-            background_tasks.add_task(handle_message_callback, event)
-        else:
-            # игнорируем другие типы (bot_started и т.п.)
-            continue
+    if update_type == "message_created":
+        background_tasks.add_task(handle_message_created, body)
+    elif update_type == "message_callback":
+        background_tasks.add_task(handle_message_callback, body)
+    else:
+        # игнорируем bot_started и прочие
+        logger.debug("Ignored update_type: %s", update_type)
 
     return {"success": True}

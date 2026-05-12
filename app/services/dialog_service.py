@@ -1,3 +1,4 @@
+# app/services/dialog_service.py
 from dataclasses import dataclass
 from typing import Dict, Optional, List, Tuple
 
@@ -69,11 +70,13 @@ class DialogService:
                         "type": "callback",
                         "text": "Мастерская",
                         "payload": "address_mode:workshop",
+                        "intent": "default",
                     },
                     {
                         "type": "callback",
                         "text": "Ввести адрес",
                         "payload": "address_mode:enter_address",
+                        "intent": "default",
                     },
                 ]
             ]
@@ -87,6 +90,7 @@ class DialogService:
                         "type": "callback",
                         "text": "Частный дом",
                         "payload": "address_details:private_house",
+                        "intent": "default",
                     },
                 ]
             ]
