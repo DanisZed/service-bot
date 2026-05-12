@@ -6,7 +6,7 @@ import httpx
 MAX_API_BASE_URL = "https://platform-api.max.ru"
 
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN")
-MAX_APPLICATIONS_CHAT_ID = int(os.getenv("MAX_APPLICATIONS_CHAT_ID", "-74626173921476"))
+MAX_APPLICATIONS_CHAT_ID = int(os.getenv("MAX_APPLICATIONS_CHAT_ID", "-74638917986500"))
 
 
 class MaxClient:
