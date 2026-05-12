@@ -31,7 +31,13 @@ async def max_webhook(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=403, detail="Invalid secret")
 
     payload = await request.json()
+    message = payload.get("message", {})
+    recipient = message.get("recipient", {})
+    sender = message.get("sender", {})
+
     print("MAX webhook:", payload)
+    print("DEBUG recipient:", recipient)
+    print("DEBUG sender:", sender)
 
     update_type = payload.get("update_type")
 
