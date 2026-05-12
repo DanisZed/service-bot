@@ -2,6 +2,8 @@ from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 
 from max_client import MaxClient
 from app.services.dialog_service import dialog_service
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -72,6 +74,7 @@ async def handle_message_callback(event: dict):
 async def max_webhook(request: Request, background_tasks: BackgroundTasks):
     # если у тебя есть проверка секрета, оставь её
     body = await request.json()
+    logger.warning("MAX WEBHOOK BODY: %s", body)
 
     # По доке Update - массив updates. Но некоторые интеграции шлют один update.
     # Ориентируемся на то, что есть в твоём боте.
