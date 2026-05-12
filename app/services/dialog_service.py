@@ -26,13 +26,23 @@ class DialogContext:
     address: Optional[str] = None
     address_details: Optional[str] = None  # кв/подъезд/этаж и т.п.
     description: Optional[str] = None
-    slot: Optional[str] = None             # дата или дата+время
+    date: Optional[str] = None             # красивая дата: "Четверг, 15.05.26"
+    slot: Optional[str] = None             # время/слот: "09:00-10:00"
     name: Optional[str] = None
     phone: Optional[str] = None
 
 
 # Пн=0 ... Вс=6
 WEEKDAY_SHORT_RU = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+WEEKDAY_FULL_RU = [
+    "Понедельник",
+    "Вторник",
+    "Среда",
+    "Четверг",
+    "Пятница",
+    "Суббота",
+    "Воскресенье",
+]
 
 # 9 часовых слотов
 TIME_SLOTS = [
@@ -67,6 +77,14 @@ class DialogService:
             return "+7" + digits
         return None
 
+    def _format_pretty_date(self, date_str: str) -> str:
+        """
+        '2026-05-15' -> 'Четверг, 15.05.26'
+        """
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        weekday = WEEKDAY_FULL_RU[d.weekday()]
+        return f"{weekday}, {d.strftime('%d.%m.%y')}"
+
     # ---------- Заглушка БД для занятых слотов ----------
 
     async def _get_booked_slots_for_date(self, date_str: str) -> set[str]:
@@ -76,12 +94,6 @@ class DialogService:
         Должна возвращать множество payload'ов занятых слотов вида:
         'slot_time:YYYY-MM-DD:09:00-10:00'
         """
-        # пример для будущей реализации:
-        # bookings = await booking_repo.get_time_slots_for_date(date_str)
-        # return {
-        #     f"slot_time:{date_str}:{b.start}-{b.end}"
-        #     for b in bookings
-        # }
         return set()
 
     # ---------- Кнопки ----------
@@ -148,13 +160,13 @@ class DialogService:
             d = today + timedelta(days=offset)
             iso_str = d.isoformat()  # 2026-05-12
             weekday_idx = d.weekday()  # Monday=0
-            wd = WEEKDAY_SHORT_RU[weekday_idx]
+            wd_short = WEEKDAY_SHORT_RU[weekday_idx]
             if offset == 0:
                 label = "Сегодня"
             elif offset == 1:
                 label = "Завтра"
             else:
-                label = f"{wd.capitalize()}, {d.strftime('%d.%m')}"
+                label = f"{wd_short.capitalize()}, {d.strftime('%d.%m')}"
 
             options.append(
                 {
@@ -316,6 +328,7 @@ class DialogService:
 
         # Текстовый ввод слота (дата/время) как фоллбек — минуя кнопки
         if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
+            ctx.date = None
             ctx.slot = text_clean
             ctx.state = DialogState.NAME
             return "Ок. Как к тебе обращаться?", None
@@ -394,11 +407,12 @@ class DialogService:
         # выбор даты: slot:YYYY-MM-DD
         if payload.startswith("slot:") and ctx.state == DialogState.SLOT:
             date_str = payload.split(":", 1)[1]  # '2026-05-15'
-            ctx.slot = date_str  # пока храним только дату
+            ctx.date = self._format_pretty_date(date_str)
+            ctx.slot = None
             ctx.state = DialogState.SLOT_TIME
 
             return (
-                f"Выбери удобное время для {date_str}:",
+                f"Выбери удобное время для {ctx.date}:",
                 await self._buttons_time_slots(date_str),
             )
 
@@ -409,7 +423,6 @@ class DialogService:
             try:
                 date_part, time_part = rest.split(":", 1)
             except ValueError:
-                # fallback, если что-то пошло не так
                 ctx.slot = rest
                 ctx.state = DialogState.NAME
                 return "Ок. Как к тебе обращаться?", None
@@ -418,13 +431,13 @@ class DialogService:
             payload_full = f"slot_time:{date_part}:{time_part}"
 
             if payload_full in booked:
-                # слот уже занят — обновляем список
                 return (
                     "Увы, этот слот уже занят. Выбери, пожалуйста, другой:",
                     await self._buttons_time_slots(date_part),
                 )
 
-            ctx.slot = f"{date_part} {time_part}"
+            # ctx.date уже хранит красивую дату
+            ctx.slot = time_part  # "09:00-10:00"
             ctx.state = DialogState.NAME
             return "Ок. Как к тебе обращаться?", None
 
@@ -440,21 +453,30 @@ class DialogService:
         lines = [
             "📝 Новая заявка",
             f"👤 Пользователь ID: {user_id}",
-            f"🔧 Услуга: {ctx.service}",
-            f"📍 Адрес: {ctx.address}",
+            f"🔧 Услуга: {ctx.service or '—'}",
         ]
 
-        if ctx.address_details:
-            lines.append(f"📌 Уточнение: {ctx.address_details}")
+        # Адрес / мастерская
+        if ctx.address == "Мастерская":
+            lines.append("🏭 Место выполнения: мастерская")
+        elif ctx.address:
+            lines.append(f"📍 Адрес: {ctx.address}")
+        else:
+            lines.append("📍 Адрес: не указан")
 
-        lines.extend(
-            [
-                f"📄 Описание: {ctx.description}",
-                f"⏰ Время/слот: {ctx.slot}",
-                f"🙋‍♂️ Имя: {ctx.name}",
-                f"📞 Телефон: {ctx.phone}",
-            ]
-        )
+        if ctx.address_details:
+            lines.append(f"📌 Уточнение по адресу: {ctx.address_details}")
+
+        # Дата и время
+        if ctx.date:
+            lines.append(f"📅 Дата: {ctx.date}")
+        if ctx.slot:
+            lines.append(f"⏰ Время/слот: {ctx.slot}")
+
+        # Описание и контакты
+        lines.append(f"📄 Описание: {ctx.description or '—'}")
+        lines.append(f"🙋‍♂️ Имя: {ctx.name or '—'}")
+        lines.append(f"📞 Телефон: {ctx.phone or '—'}")
 
         text = "\n".join(lines)
 
