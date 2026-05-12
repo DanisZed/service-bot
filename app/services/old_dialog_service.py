@@ -452,8 +452,8 @@ class DialogService:
                 "client_id": None,
                 "client_name": ctx.name,
                 "client_phone": ctx.phone,
-                "main_category": None,              # старый диалог категорий не знает
-                "subtype": None,
+                "main_category": "legacy",          # заглушка для старого сценария
+                "subtype": "legacy_service",
                 "custom_device": ctx.service,
                 "service_title": ctx.service,
                 "problem_description": ctx.description,

@@ -15,25 +15,22 @@ MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"
 
 
 async def handle_message_created(event: Dict[str, Any]) -> None:
-    """
-    Обработка входящего сообщения от пользователя (update_type == 'message_created').
-
-    Здесь мы:
-      - достаём user_id и текст;
-      - передаём их в dialog_service.handle_message;
-      - получаем текст ответа и attachments для MAX;
-      - отправляем ответ пользователю.
-    """
     message = event.get("message") or {}
     sender = message.get("sender") or {}
     body = message.get("body") or {}
+    chat = message.get("chat") or {}
 
     user_id = sender.get("user_id")
     text = body.get("text", "")
+    chat_id = chat.get("chat_id")
 
     if not user_id:
         logger.warning("message_created without user_id: %s", event)
         return
+
+    # передаём chat_id в диалог
+    if chat_id is not None:
+        dialog_service.set_chat_id(user_id, chat_id)
 
     reply_text, attachments = await dialog_service.handle_message(
         user_id=user_id,
