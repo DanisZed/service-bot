@@ -1,7 +1,7 @@
 # app/api/max_webhook.py
 import logging
 
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Request, BackgroundTasks
 
 from max_client import MaxClient
 from app.services.dialog_service import dialog_service
@@ -42,7 +42,7 @@ async def handle_message_callback(event: dict):
     """
     Обработка нажатия на callback-кнопку (update_type == 'message_callback').
 
-    Формат из твоего лога:
+    Формат из лога:
     {
       "callback": {
         "timestamp": ...,
@@ -73,8 +73,13 @@ async def handle_message_callback(event: dict):
     )
 
     client = MaxClient()
+
+    # Если attachments is None — явно очищаем клавиатуру (attachments=[]).
+    # Если attachments не None — подставляем новую клавиатуру.
     message: dict = {"text": reply_text}
-    if attachments:
+    if attachments is None:
+        message["attachments"] = []
+    else:
         message["attachments"] = attachments
 
     await client.answer_callback(
@@ -90,11 +95,6 @@ async def max_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
     logger.info("MAX WEBHOOK BODY: %s", body)
 
-    # Если у тебя есть проверка секрета — можно тут добавить
-    # например, по header'у X-Hub-Signature или параметру
-    # я оставляю MAX_WEBHOOK_SECRET неиспользованным, как у тебя сейчас.
-
-    # У тебя приходит одиночный объект с полем update_type, без массива updates.
     update_type = body.get("update_type")
 
     if update_type == "message_created":
