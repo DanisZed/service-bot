@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Request, BackgroundTasks
 
-from app.integrations.max_client import MaxClient  # поправь путь, если файл лежит в другом месте
+from max_client import MaxClient  # поправь путь, если файл лежит в другом месте
 from app.services.dialog_service import dialog_service  # твой модуль диалогов
 
 router = APIRouter()
