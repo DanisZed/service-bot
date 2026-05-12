@@ -1,4 +1,3 @@
-# app/services/dialog_service.py
 from dataclasses import dataclass
 from typing import Dict, Optional, List, Tuple
 
@@ -8,9 +7,9 @@ from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
 class DialogState:
     IDLE = "idle"
     SERVICE = "service"
-    ADDRESS_MODE = "address_mode"
-    ADDRESS = "address"
-    ADDRESS_DETAILS = "address_details"
+    ADDRESS_MODE = "address_mode"        # выбор: мастерская / ввод адреса / сразу текстом
+    ADDRESS = "address"                  # ввод адреса
+    ADDRESS_DETAILS = "address_details"  # кв/подъезд
     DESCRIPTION = "description"
     SLOT = "slot"
     NAME = "name"
@@ -23,7 +22,7 @@ class DialogContext:
     state: str = DialogState.IDLE
     service: Optional[str] = None
     address: Optional[str] = None
-    address_details: Optional[str] = None
+    address_details: Optional[str] = None  # кв/подъезд/этаж и т.п.
     description: Optional[str] = None
     slot: Optional[str] = None
     name: Optional[str] = None
@@ -49,10 +48,10 @@ class DialogService:
             return "+7" + digits
         return None
 
-    # ---------- Кнопки ----------
+    # ---------- Кнопки (callback) ----------
 
     def _inline_keyboard(self, rows: List[List[dict]]) -> List[dict]:
-        # rows: список рядов, в каждом ряду — список кнопок
+        # rows: список рядов; в каждом ряду — список кнопок
         return [
             {
                 "type": "inline_keyboard",
@@ -63,36 +62,52 @@ class DialogService:
         ]
 
     def _buttons_address_mode(self) -> List[dict]:
-        # Одна строка с двумя кнопками
         return self._inline_keyboard(
             [
                 [
-                    {"type": "message", "text": "Мастерская"},
-                    {"type": "message", "text": "Ввести адрес"},
+                    {
+                        "type": "callback",
+                        "text": "Мастерская",
+                        "payload": "address_mode:workshop",
+                    },
+                    {
+                        "type": "callback",
+                        "text": "Ввести адрес",
+                        "payload": "address_mode:enter_address",
+                    },
                 ]
             ]
         )
 
     def _buttons_private_house(self) -> List[dict]:
-        # Одна строка с одной кнопкой
         return self._inline_keyboard(
             [
                 [
-                    {"type": "message", "text": "Частный дом"},
+                    {
+                        "type": "callback",
+                        "text": "Частный дом",
+                        "payload": "address_details:private_house",
+                    },
                 ]
             ]
         )
 
-    # ---------- Основная логика ----------
+    # ---------- Основная логика по тексту ----------
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
+        """
+        Обработка обычных текстовых сообщений (message_created).
+        Возвращает (text, attachments) для отправки через /messages.
+        """
         text_clean = text.strip()
         text_lower = text_clean.lower()
 
+        # Команды отмены
         if text_lower in ("/cancel", "отмена", "стоп"):
             self._sessions.pop(user_id, None)
             return "Ок, заявку отменил. Чтобы начать заново, напиши /start.", None
 
+        # Команда старта / новая заявка
         if text_lower in ("/start", "новая заявка", "заявка"):
             self._sessions[user_id] = DialogContext(state=DialogState.SERVICE)
             return (
@@ -102,6 +117,7 @@ class DialogService:
 
         ctx = self._get_ctx(user_id)
 
+        # Первый шаг: услуга
         if ctx.state == DialogState.SERVICE:
             ctx.service = text_clean
             ctx.state = DialogState.ADDRESS_MODE
@@ -114,24 +130,8 @@ class DialogService:
                 self._buttons_address_mode(),
             )
 
+        # Если пользователь в ADDRESS_MODE и ввёл текст руками — считаем это адресом
         if ctx.state == DialogState.ADDRESS_MODE:
-            if text_clean == "Мастерская":
-                ctx.address = "Мастерская"
-                ctx.address_details = None
-                ctx.state = DialogState.DESCRIPTION
-                return (
-                    "Понял, работа в мастерской.\n"
-                    "Опиши, пожалуйста, что нужно сделать (детально).",
-                    None,
-                )
-
-            if text_clean == "Ввести адрес":
-                ctx.state = DialogState.ADDRESS
-                return (
-                    "Хорошо, введи, пожалуйста, полный адрес (улица, дом, город).",
-                    None,
-                )
-
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
             return (
@@ -141,6 +141,7 @@ class DialogService:
                 self._buttons_private_house(),
             )
 
+        # Ввод адреса (если до этого нажал «Ввести адрес», а теперь пишет текст)
         if ctx.state == DialogState.ADDRESS:
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
@@ -151,6 +152,7 @@ class DialogService:
                 self._buttons_private_house(),
             )
 
+        # Уточнение по адресу: кв/подъезд (текстом, если не нажал кнопку)
         if ctx.state == DialogState.ADDRESS_DETAILS:
             if text_clean == "Частный дом":
                 ctx.address_details = None
@@ -200,11 +202,54 @@ class DialogService:
             self._sessions.pop(user_id, None)
             return reply, None
 
+        # Фоллбек
         ctx.state = DialogState.SERVICE
         return (
             "Привет! Давай оформим заявку. Напиши, пожалуйста, какая услуга нужна.",
             None,
         )
+
+    # ---------- Логика по callback (payload) ----------
+
+    async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
+        """
+        Обработка нажатий на callback-кнопки (message_callback).
+        payload — строка вида 'address_mode:workshop', 'address_details:private_house' и т.п.
+        """
+        ctx = self._get_ctx(user_id)
+
+        if payload == "address_mode:workshop" and ctx.state == DialogState.ADDRESS_MODE:
+            ctx.address = "Мастерская"
+            ctx.address_details = None
+            ctx.state = DialogState.DESCRIPTION
+            return (
+                "Понял, работа в мастерской.\n"
+                "Опиши, пожалуйста, что нужно сделать (детально).",
+                None,
+            )
+
+        if payload == "address_mode:enter_address" and ctx.state == DialogState.ADDRESS_MODE:
+            ctx.state = DialogState.ADDRESS
+            return (
+                "Хорошо, введи, пожалуйста, полный адрес (улица, дом, город).",
+                None,
+            )
+
+        if payload == "address_details:private_house" and ctx.state == DialogState.ADDRESS_DETAILS:
+            ctx.address_details = None
+            ctx.state = DialogState.DESCRIPTION
+            return (
+                "Принял. Теперь опиши, пожалуйста, что нужно сделать (детально).",
+                None,
+            )
+
+        # Если callback пришёл не к тому состоянию — просто скажем, что команда неактуальна
+        return (
+            "Команда уже не актуальна. Напиши, пожалуйста, текстом, что хочешь сделать.",
+            None,
+        )
+
+    # ---------- Отправка заявки в чат ----------
 
     async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
         lines = [

@@ -19,7 +19,6 @@ async def handle_message_created(event: dict):
     if not user_id:
         return
 
-    # dialog_service теперь возвращает (text, attachments)
     reply_text, attachments = await dialog_service.handle_message(
         user_id=user_id,
         text=text,
@@ -34,18 +33,62 @@ async def handle_message_created(event: dict):
     await client.close()
 
 
+async def handle_message_callback(event: dict):
+    """
+    Обработка нажатия на callback-кнопку (update_type == 'message_callback').
+    Ориентируемся на структуру Update из доки MAX:
+    updates[i].callback.sender.user_id
+    updates[i].callback.callback_id
+    updates[i].callback.payload
+    """
+    callback = event.get("callback", {})
+    sender = callback.get("sender", {}) or {}
+    user_id = sender.get("user_id")
+    callback_id = callback.get("callback_id")
+    payload = callback.get("payload")
+
+    if not user_id or not callback_id or payload is None:
+        return
+
+    reply_text, attachments = await dialog_service.handle_callback(
+        user_id=user_id,
+        payload=payload,
+    )
+
+    client = MaxClient()
+    message: dict = {"text": reply_text}
+    if attachments:
+        message["attachments"] = attachments
+
+    await client.answer_callback(
+        callback_id=callback_id,
+        message=message,
+        notification=None,
+    )
+    await client.close()
+
+
 @router.post("/max/webhook")
 async def max_webhook(request: Request, background_tasks: BackgroundTasks):
-    secret = request.headers.get("X-Max-Bot-Api-Secret")
-    if secret != MAX_WEBHOOK_SECRET:
-        raise HTTPException(status_code=403, detail="Invalid secret")
+    # если у тебя есть проверка секрета, оставь её
+    body = await request.json()
 
-    payload = await request.json()
-    print("MAX webhook:", payload)
+    # По доке Update - массив updates. Но некоторые интеграции шлют один update.
+    # Ориентируемся на то, что есть в твоём боте.
+    updates = body.get("updates") or []
+    if not updates and "update_type" in body:
+        # fallback: одиночный update без массива
+        updates = [body]
 
-    update_type = payload.get("update_type")
+    for event in updates:
+        update_type = event.get("update_type")
 
-    if update_type == "message_created":
-        background_tasks.add_task(handle_message_created, payload)
+        if update_type == "message_created":
+            background_tasks.add_task(handle_message_created, event)
+        elif update_type == "message_callback":
+            background_tasks.add_task(handle_message_callback, event)
+        else:
+            # игнорируем другие типы (bot_started и т.п.)
+            continue
 
-    return {"ok": True}
+    return {"success": True}

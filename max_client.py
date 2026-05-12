@@ -41,7 +41,6 @@ class MaxClient:
         resp = await self.client.post("/messages", params=params, json=payload)
 
         if resp.status_code >= 400:
-            # логируем тело ответа, чтобы видеть причину 400 от MAX
             try:
                 logger.error("MAX API error (user): %s", resp.json())
             except Exception:
@@ -68,6 +67,34 @@ class MaxClient:
                 logger.error("MAX API error (chat): %s", resp.json())
             except Exception:
                 logger.error("MAX API error (chat): %s", resp.text)
+
+        resp.raise_for_status()
+        return resp.json()
+
+    async def answer_callback(
+        self,
+        callback_id: str,
+        message: Optional[dict] = None,
+        notification: Optional[str] = None,
+    ) -> dict:
+        """
+        POST /answers?callback_id=...
+        Ответ на нажатие callback-кнопки.
+        """
+        params = {"callback_id": callback_id}
+        payload: dict = {}
+        if message is not None:
+            payload["message"] = message
+        if notification is not None:
+            payload["notification"] = notification
+
+        resp = await self.client.post("/answers", params=params, json=payload)
+
+        if resp.status_code >= 400:
+            try:
+                logger.error("MAX API error (answer_callback): %s", resp.json())
+            except Exception:
+                logger.error("MAX API error (answer_callback): %s", resp.text)
 
         resp.raise_for_status()
         return resp.json()
