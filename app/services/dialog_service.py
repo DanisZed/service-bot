@@ -1,6 +1,10 @@
 # app/services/dialog_service.py
 from dataclasses import dataclass
 from typing import Dict, Optional, List, Tuple
+from datetime import datetime, timedelta
+
+# вверху файла, рядом с импортами
+WEEKDAY_SHORT_RU = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]  # Monday=0
 
 from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
 
@@ -95,6 +99,77 @@ class DialogService:
                 ]
             ]
         )
+    def _buttons_slot(self) -> List[dict]:
+        options = self._build_slot_options()  # 6 элементов
+        # разобьём на два ряда по 3
+        row1 = options[0:3]
+        row2 = options[3:6]
+
+        rows: List[List[dict]] = []
+        if row1:
+            rows.append(
+                [
+                    {
+                        "type": "callback",
+                        "text": opt["text"],
+                        "payload": opt["payload"],
+                        "intent": "default",
+                    }
+                    for opt in row1
+                ]
+            )
+        if row2:
+            rows.append(
+                [
+                    {
+                        "type": "callback",
+                        "text": opt["text"],
+                        "payload": opt["payload"],
+                        "intent": "default",
+                    }
+                    for opt in row2
+                ]
+            )
+
+        return self._inline_keyboard(rows)
+
+    def _build_slot_options(self) -> List[dict]:
+        """
+        Строит список слотов на ближайшие 6 дней:
+        [
+          {"text": "Сегодня", "payload": "slot:2026-05-12"},
+          {"text": "Завтра", "payload": "slot:2026-05-13"},
+          {"text": "Чт, 15.05", "payload": "slot:2026-05-15"},
+          ...
+        ]
+        """
+        today = datetime.now().date()
+        options: List[dict] = []
+
+        for offset in range(6):
+            d = today + timedelta(days=offset)
+            iso_str = d.isoformat()  # 2026-05-12
+            weekday_idx = d.weekday()  # Monday=0
+            wd = WEEKDAY_SHORT_RU[weekday_idx]
+            label: str
+
+            if offset == 0:
+                label = "Сегодня"
+            elif offset == 1:
+                label = "Завтра"
+            else:
+                label = f"{wd.capitalize()}, {d.strftime('%d.%m')}"
+
+            options.append(
+                {
+                    "text": label,
+                    "payload": f"slot:{iso_str}",
+                }
+            )
+
+        return options
+    
+    
 
     # ---------- Основная логика по тексту ----------
 
@@ -172,8 +247,9 @@ class DialogService:
             ctx.description = text_clean
             ctx.state = DialogState.SLOT
             return (
-                "Принял описание. Когда удобно выполнить услугу? Напиши дату и время или диапазон.",
-                None,
+                "Принял описание. Когда удобно выполнить услугу?\n"
+                "Можешь выбрать один из ближайших дней ниже или написать дату и время текстом.",
+                self._buttons_slot(),
             )
 
         if ctx.state == DialogState.SLOT:
@@ -246,12 +322,36 @@ class DialogService:
                 "Принял. Теперь опиши, пожалуйста, что нужно сделать (детально).",
                 None,
             )
+        # слоты: payload вида 'slot:2026-05-15'
+        if payload.startswith("slot:") and ctx.state == DialogState.SLOT:
+            date_str = payload.split(":", 1)[1]  # '2026-05-15'
+            try:
+                d = datetime.strptime(date_str, "%Y-%m-%d").date()
+                weekday_idx = d.weekday()
+                wd = WEEKDAY_SHORT_RU[weekday_idx]
+                # подпись как в кнопке: Чт, 15.05
+                label = f"{wd.capitalize()}, {d.strftime('%d.%m')}"
+                # но для сегодня/завтра лучше сохранить так и так
+                today = datetime.now().date()
+                if d == today:
+                    ctx.slot = "Сегодня"
+                elif d == today + timedelta(days=1):
+                    ctx.slot = "Завтра"
+                else:
+                    ctx.slot = label
+            except ValueError:
+                # если вдруг дата кривой формата, просто сохраним raw
+                ctx.slot = date_str
 
+            ctx.state = DialogState.NAME
+            return "Ок. Как к тебе обращаться?", None
+        
         # Если callback пришёл не к тому состоянию — просто скажем, что команда неактуальна
         return (
             "Команда уже не актуальна. Напиши, пожалуйста, текстом, что хочешь сделать.",
             None,
         )
+    
 
     # ---------- Отправка заявки в чат ----------
 
