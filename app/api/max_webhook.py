@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 
 from max_client import MaxClient
+from app.services.dialog_service import dialog_service
 
 router = APIRouter()
 
@@ -18,8 +19,9 @@ async def handle_message_created(event: dict):
     if not user_id:
         return
 
+    reply_text = await dialog_service.handle_message(user_id=user_id, text=text)
+
     client = MaxClient()
-    reply_text = f"Привет! Я бот заявок. Ты написал: {text}"
     await client.send_text_to_user(user_id=user_id, text=reply_text)
     await client.close()
 
@@ -31,13 +33,7 @@ async def max_webhook(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=403, detail="Invalid secret")
 
     payload = await request.json()
-    message = payload.get("message", {})
-    recipient = message.get("recipient", {})
-    sender = message.get("sender", {})
-
     print("MAX webhook:", payload)
-    print("DEBUG recipient:", recipient)
-    print("DEBUG sender:", sender)
 
     update_type = payload.get("update_type")
 
