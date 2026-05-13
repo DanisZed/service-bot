@@ -5,6 +5,10 @@ from app.db.session import AsyncSessionLocal
 from app.db.models import ServiceRequest, Master
 from max_client_second_bot import MaxClientSecondBot
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def _build_yandex_url(address: Optional[str]) -> Optional[str]:
     if not address or address == "Мастерская":
@@ -69,19 +73,16 @@ def _build_google_calendar_url(
 
 
 async def notify_master_request_created(request_id: int) -> None:
-    """
-    Уведомляет мастера о созданной заявке через второго бота.
-    Требования:
-      - ServiceRequest.master_id заполнен,
-      - Master.max_user_id — user_id мастера, которого знает второй бот.
-    """
+    logger.info(f"notify_master_request_created: request_id={request_id}")
     async with AsyncSessionLocal() as session:
         req = await session.get(ServiceRequest, request_id)
         if not req or not req.master_id:
+            logger.info("notify_master_request_created: no req or no master_id")
             return
 
         master = await session.get(Master, req.master_id)
         if not master or not master.max_user_id:
+            logger.info("notify_master_request_created: no master or no max_user_id")
             return
 
         lines: List[str] = [f"📝 Заявка № {req.id}"]
@@ -164,12 +165,14 @@ async def notify_master_request_created(request_id: int) -> None:
                 }
             ]
 
+        logger.info(f"notify_master_request_created: sending to master {master.max_user_id}")
         client = MaxClientSecondBot()
         try:
-            await client.send_text_to_user(
+            resp = await client.send_text_to_user(
                 user_id=master.max_user_id,
                 text=text,
                 attachments=attachments,
             )
+            logger.info(f"notify_master_request_created: response={resp}")
         finally:
             await client.close()
