@@ -142,13 +142,15 @@ class MaxClient:
         if attachments:
             payload["attachments"] = attachments
 
-        return await self._request(
+        resp = await self._request(
             "POST",
             "/messages",
             params=params,
             json=payload,
             context=f"user user_id={user_id}",
         )
+        print("### MAX send_text_to_user resp=", resp)
+        return resp
 
     async def send_text_to_chat(
         self,
