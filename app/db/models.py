@@ -38,8 +38,9 @@ class ServiceRequest(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
+    # НОВОЕ: связь с мастером
     master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
-    
+
     status = Column(String(32), default="new", nullable=False)
     opened_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     in_work_at = Column(DateTime(timezone=True), nullable=True)
@@ -48,7 +49,7 @@ class ServiceRequest(Base):
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
     cancel_reason = Column(Text, nullable=True)
 
-    source = Column(String(32), nullable=False)          # 'max_bot' и т.п.
+    source = Column(String(32), nullable=False)
     user_external_id = Column(BigInteger, nullable=True)
     chat_external_id = Column(BigInteger, nullable=True)
 
@@ -56,14 +57,14 @@ class ServiceRequest(Base):
     client_name = Column(Text, nullable=True)
     client_phone = Column(String(32), nullable=True)
 
-    main_category = Column(String(64), nullable=False)   # major_appliance ...
-    subtype = Column(String(64), nullable=False)         # washing_machine ...
+    main_category = Column(String(64), nullable=False)
+    subtype = Column(String(64), nullable=False)
     custom_device = Column(Text, nullable=True)
 
     service_title = Column(Text, nullable=True)
     problem_description = Column(Text, nullable=False)
 
-    location_type = Column(String(32), nullable=False)   # workshop / client_address
+    location_type = Column(String(32), nullable=False)
     address = Column(Text, nullable=True)
     address_details = Column(Text, nullable=True)
 
@@ -84,6 +85,9 @@ class ServiceRequest(Base):
 
     client = relationship("Client", back_populates="requests")
     time_slots = relationship("TimeSlotBooking", back_populates="request")
+
+    # НОВОЕ: обратная связь к мастеру
+    master = relationship("Master", back_populates="requests")
 
 class Master(Base):
     __tablename__ = "master"
