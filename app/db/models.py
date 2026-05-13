@@ -107,6 +107,10 @@ class Master(Base):
 
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
+     # новые поля:
+    login_code = Column(String(16), nullable=True)
+    login_code_expires_at = Column(DateTime(timezone=True), nullable=True)
+
     requests = relationship("ServiceRequest", back_populates="master")
 
 

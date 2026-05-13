@@ -1,4 +1,3 @@
-# app/api/deps.py
 import os
 
 import jwt

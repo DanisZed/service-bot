@@ -1,0 +1,126 @@
+from datetime import datetime, timedelta
+import os
+import secrets
+
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import AsyncSessionLocal
+from app.db.models import Master
+from max_client import MaxClient
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/master/auth", tags=["master-auth"])
+
+MAX_SECOND_BOT_TOKEN = os.getenv("MAX_SECOND_BOT_TOKEN")
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME")  # заменишь на свой
+
+
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+
+class VerifyCodeRequest(BaseModel):
+    code: str
+
+
+@router.post("/request-code")
+async def request_login_code(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Отправляет мастеру код входа в веб-панель через второго MAX-бота.
+    Пока берём первого активного мастера — потом можно фильтровать по телефону/логину.
+    """
+    result = await db.execute(
+        select(Master).where(Master.is_active == 1)
+    )
+    master = result.scalars().first()
+    if not master or not master.max_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Master with max_user_id not configured",
+        )
+
+    code = f"{secrets.randbelow(999999):06d}"  # 6-значный код
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    master.login_code = code
+    master.login_code_expires_at = expires_at
+    await db.commit()
+
+    if not MAX_SECOND_BOT_TOKEN:
+        logger.error("MAX_SECOND_BOT_TOKEN is not set")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Second bot token not configured",
+        )
+
+    text = (
+        f"Код для входа в панель мастера: {code}\n"
+        "Никому его не сообщайте. Действует 10 минут."
+    )
+
+    client = MaxClient(token=MAX_SECOND_BOT_TOKEN)
+    try:
+        await client.send_text_to_user(
+            user_id=master.max_user_id,
+            text=text,
+            attachments=None,
+        )
+    finally:
+        await client.close()
+
+    return {"ok": True}
+
+
+@router.post("/verify-code")
+async def verify_login_code(
+    payload: VerifyCodeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Проверяет код из MAX, обнуляет его и выдаёт JWT для мастера.
+    """
+    code = payload.code.strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="Empty code")
+
+    result = await db.execute(
+        select(Master).where(Master.login_code == code)
+    )
+    master = result.scalars().first()
+    if not master:
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    if (
+        not master.login_code_expires_at
+        or master.login_code_expires_at < datetime.utcnow()
+    ):
+        raise HTTPException(status_code=400, detail="Code expired")
+
+    # одноразовый код: очищаем
+    master.login_code = None
+    master.login_code_expires_at = None
+    await db.commit()
+
+    payload_jwt = {
+        "sub": str(master.id),
+        "role": "master",
+        "exp": datetime.utcnow() + timedelta(days=7),
+    }
+    access_token = jwt.encode(payload_jwt, SECRET_KEY, algorithm="HS256")
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "master_id": master.id,
+        "name": master.name,
+    }
