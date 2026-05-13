@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -6,47 +6,81 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import AsyncSessionLocal
 from app.db.models import ServiceRequest
-from app.api.deps import get_current_master, get_db  # см. ниже deps.py
+from app.api.deps import get_current_master, get_db
+
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
 
 class ServiceRequestOut(BaseModel):
     id: int
-    created_at: Optional[datetime] = None
-    status: Optional[str] = None
 
+    # Время создания и статус заявки
+    created_at: datetime
+    status: str
+
+    # Привязка к мастеру
+    master_id: Optional[int] = None
+
+    # Клиент
+    client_id: Optional[int] = None
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
 
+    # Техника и услуга
+    main_category: str
+    subtype: str
+    custom_device: Optional[str] = None
     service_title: Optional[str] = None
-    main_category: Optional[str] = None
-    subtype: Optional[str] = None
 
+    # Адрес
+    location_type: str
     address: Optional[str] = None
     address_details: Optional[str] = None
-    problem_description: Optional[str] = None
 
-    date_iso: Optional[str] = None
+    # Описание поломки
+    problem_description: str
+
+    # Дата/время выезда
+    date_iso: Optional[date] = None
     time_slot: Optional[str] = None
+    datetime_from: Optional[datetime] = None
+    datetime_to: Optional[datetime] = None
 
-    master_id: Optional[int] = None
+    # Деньги
+    total_amount: Optional[float] = None
+    currency: str
+    payment_status: str
+    paid_amount: Optional[float] = None
+    paid_at: Optional[datetime] = None
+
+    # Источник и внешние ссылки
+    source: str
+    yandex_url: Optional[str] = None
+    google_url: Optional[str] = None
 
     class Config:
-        from_attributes = True  # Pydantic v2, если у тебя v1 — ORM mode
+        from_attributes = True  # Pydantic v2
+
 
 class ServiceRequestUpdate(BaseModel):
+    # Что можно редактировать из фронта
     status: Optional[str] = None
     master_id: Optional[int] = None
+
+    # Финансовая часть (под CRM)
+    total_amount: Optional[float] = None
+    payment_status: Optional[str] = None
+    paid_amount: Optional[float] = None
+    paid_at: Optional[datetime] = None
 
 
 @router.get("", response_model=List[ServiceRequestOut])
 async def list_requests(
     status: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_master = Depends(get_current_master),
+    current_master=Depends(get_current_master),
 ):
     """
     Список заявок. Пока без пагинации.
@@ -65,11 +99,13 @@ async def list_requests(
 async def get_request(
     request_id: int,
     db: AsyncSession = Depends(get_db),
-    current_master = Depends(get_current_master),
+    current_master=Depends(get_current_master),
 ):
     req = await db.get(ServiceRequest, request_id)
     if not req:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
+        )
     return req
 
 
@@ -78,16 +114,29 @@ async def update_request(
     request_id: int,
     payload: ServiceRequestUpdate,
     db: AsyncSession = Depends(get_db),
-    current_master = Depends(get_current_master),
+    current_master=Depends(get_current_master),
 ):
     req = await db.get(ServiceRequest, request_id)
     if not req:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
+        )
 
+    # Статус и мастер
     if payload.status is not None:
         req.status = payload.status
     if payload.master_id is not None:
         req.master_id = payload.master_id
+
+    # Финансы
+    if payload.total_amount is not None:
+        req.total_amount = payload.total_amount
+    if payload.payment_status is not None:
+        req.payment_status = payload.payment_status
+    if payload.paid_amount is not None:
+        req.paid_amount = payload.paid_amount
+    if payload.paid_at is not None:
+        req.paid_at = payload.paid_at
 
     await db.commit()
     await db.refresh(req)
