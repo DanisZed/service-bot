@@ -73,6 +73,7 @@ def _build_google_calendar_url(
 
 
 async def notify_master_request_created(request_id: int) -> None:
+    print(f"### NOTIFY CALLED request_id={request_id}")
     """
     Уведомляет мастера о созданной заявке:
     - читает ServiceRequest и Master,
@@ -83,13 +84,15 @@ async def notify_master_request_created(request_id: int) -> None:
 
     async with AsyncSessionLocal() as session:
         req = await session.get(ServiceRequest, request_id)
+        print("### REQ:", req, "master_id:", getattr(req, "master_id", None))
         if not req or not req.master_id:
-            logger.info("notify_master_request_created: no req or no master_id")
+            print("### EXIT: no req or no master_id")
             return
 
         master = await session.get(Master, req.master_id)
+        print("### MASTER:", master, "max_user_id:", getattr(master, "max_user_id", None))
         if not master or not master.max_user_id:
-            logger.info("notify_master_request_created: no master or no max_user_id")
+            print("### EXIT: no master or no max_user_id")
             return
 
         lines: List[str] = [f"📝 Заявка № {req.id}"]
