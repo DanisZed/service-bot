@@ -13,7 +13,6 @@ MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"
 
 
 async def handle_message_created(event: Dict[str, Any]) -> None:
-    logger.info("MY_DEBUG: message from user_id=%s body=%s", user_id, text)
     message = event.get("message") or {}
     sender = message.get("sender") or {}
     body = message.get("body") or {}
@@ -21,17 +20,18 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     user_id = sender.get("user_id")
     text = body.get("text", "")
 
+    # сразу после получения значений — безопасный лог
+    logger.info("MY_DEBUG: message from user_id=%s body=%s", user_id, text)
+
     if not user_id:
         logger.warning("message_created without user_id: %s", event)
         return
 
     lower = text.strip().lower()
 
-    # /start или новая заявка → запуск нового диалога (категории)
     if lower in ("/start", "новая заявка", "заявка"):
         reply_text, attachments = await dialog_service.start_or_reset(user_id)
     else:
-        # всё остальное — в общий обработчик
         reply_text, attachments = await dialog_service.handle_message(user_id, text)
 
     client = MaxClient()
@@ -44,7 +44,7 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     finally:
         await client.close()
 
-
+    
 async def handle_message_callback(event: Dict[str, Any]) -> None:
     callback = event.get("callback") or {}
     user = callback.get("user") or {}
