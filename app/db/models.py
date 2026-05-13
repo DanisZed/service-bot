@@ -38,6 +38,8 @@ class ServiceRequest(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
+    master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
+    
     status = Column(String(32), default="new", nullable=False)
     opened_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     in_work_at = Column(DateTime(timezone=True), nullable=True)
@@ -82,6 +84,26 @@ class ServiceRequest(Base):
 
     client = relationship("Client", back_populates="requests")
     time_slots = relationship("TimeSlotBooking", back_populates="request")
+
+class Master(Base):
+    __tablename__ = "master"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+    # Привязка к MAX / ботам
+    max_user_id = Column(BigInteger, nullable=False, unique=True)  # user_id мастера в MAX
+    max_chat_id = Column(BigInteger, nullable=True)                # если понадобится
+
+    name = Column(Text, nullable=True)
+    phone = Column(String(32), nullable=True)
+    email = Column(String(255), nullable=True)
+
+    plan = Column(String(32), nullable=False, default="free")      # free / pro / ...
+    is_active = Column(Integer, nullable=False, default=1)
+
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    requests = relationship("ServiceRequest", back_populates="master")
 
 
 class TimeSlotBooking(Base):

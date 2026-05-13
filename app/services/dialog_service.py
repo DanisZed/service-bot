@@ -11,6 +11,8 @@ from app.db.session import AsyncSessionLocal
 from app.services.requests import create_service_request
 from app.services.devices import list_categories, list_subtypes_by_category
 
+from app.services.masters_notify import notify_master_request_created
+
 
 class DialogState:
     CHOOSE_CATEGORY = "choose_category"
@@ -388,13 +390,20 @@ class UnifiedDialogService:
                 "currency": "RUB",
                 "payment_status": "unpaid",
                 "meta": None,
+                "master_id": None,  # здесь позже будем подставлять реальный master_id
             }
 
             async with AsyncSessionLocal() as session:
                 req = await create_service_request(session, data)
 
             ctx.request_id = req.id
+
+            # Отправили в общий канал заявок
             await self._send_application_to_channel(user_id, ctx)
+
+            # Отправили личному мастеру (во второй бот) — пока будет заглушка
+            await notify_master_request_created(req.id)
+
             reply = f"Спасибо, заявку собрал. Номер: {req.id}. Отправляю мастеру, скоро свяжемся."
             self.reset(user_id)
             return reply, None

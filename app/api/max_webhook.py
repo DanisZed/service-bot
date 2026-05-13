@@ -13,6 +13,7 @@ MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"
 
 
 async def handle_message_created(event: Dict[str, Any]) -> None:
+    logger.info("MY_DEBUG: message from user_id=%s body=%s", user_id, text)
     message = event.get("message") or {}
     sender = message.get("sender") or {}
     body = message.get("body") or {}

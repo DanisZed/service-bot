@@ -39,6 +39,9 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
         user_external_id=data["user_id"],
         chat_external_id=data["chat_id"],
 
+        # НОВОЕ: привязка к мастеру (может быть None)
+        master_id=data.get("master_id"),
+
         client_id=data.get("client_id"),
         client_name=data.get("client_name"),
         client_phone=data.get("client_phone"),
