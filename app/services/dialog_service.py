@@ -13,6 +13,10 @@ from app.services.devices import list_categories, list_subtypes_by_category
 
 from app.services.masters_notify import notify_master_request_created
 
+from app.db.models import Master
+
+from sqlalchemy import select
+
 
 class DialogState:
     CHOOSE_CATEGORY = "choose_category"
@@ -368,32 +372,39 @@ class UnifiedDialogService:
             ctx.phone = normalized
             ctx.state = DialogState.CONFIRMED
 
-            data = {
-                "user_id": user_id,
-                "chat_id": user_id,
-                "client_id": None,
-                "client_name": ctx.name,
-                "client_phone": ctx.phone,
-                "main_category": ctx.main_category,
-                "subtype": ctx.subtype,
-                "custom_device": None,
-                "service_title": ctx.service_title or ctx.subtype,
-                "problem_description": ctx.description,
-                "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
-                "address": None if ctx.address == "Мастерская" else ctx.address,
-                "address_details": ctx.address_details,
-                "date_iso": ctx.date_iso,
-                "time_slot": ctx.slot,
-                "datetime_from": None,
-                "datetime_to": None,
-                "total_amount": None,
-                "currency": "RUB",
-                "payment_status": "unpaid",
-                "meta": None,
-                "master_id": None,  # здесь позже будем подставлять реальный master_id
-            }
-
             async with AsyncSessionLocal() as session:
+                # ищем мастера с max_user_id = user_id
+                result = await session.execute(
+                    select(Master).where(Master.max_user_id == user_id)
+                )
+                master_obj = result.scalar_one_or_none()
+                master_id = master_obj.id if master_obj else None
+
+                data = {
+                    "user_id": user_id,
+                    "chat_id": user_id,
+                    "client_id": None,
+                    "client_name": ctx.name,
+                    "client_phone": ctx.phone,
+                    "main_category": ctx.main_category,
+                    "subtype": ctx.subtype,
+                    "custom_device": None,
+                    "service_title": ctx.service_title or ctx.subtype,
+                    "problem_description": ctx.description,
+                    "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
+                    "address": None if ctx.address == "Мастерская" else ctx.address,
+                    "address_details": ctx.address_details,
+                    "date_iso": ctx.date_iso,
+                    "time_slot": ctx.slot,
+                    "datetime_from": None,
+                    "datetime_to": None,
+                    "total_amount": None,
+                    "currency": "RUB",
+                    "payment_status": "unpaid",
+                    "meta": None,
+                    "master_id": master_id,
+                }
+
                 req = await create_service_request(session, data)
 
             ctx.request_id = req.id
