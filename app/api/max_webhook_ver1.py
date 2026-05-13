@@ -4,7 +4,8 @@ from typing import Any, Dict
 from fastapi import APIRouter, Request, BackgroundTasks
 
 from max_client import MaxClient
-from app.services.dialog_service import dialog_service  # новый единый сервис
+from app.services.old_dialog_service import dialog_service as old_dialog_service
+from app.services.category_dialog_service import category_dialog_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -24,14 +25,21 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
         logger.warning("message_created without user_id: %s", event)
         return
 
+    # На старте всегда запускаем выбор категории
     lower = text.strip().lower()
-
-    # /start или новая заявка → запуск нового диалога (категории)
     if lower in ("/start", "новая заявка", "заявка"):
-        reply_text, attachments = await dialog_service.start_or_reset(user_id)
+        reply_text, attachments = await category_dialog_service.handle_message(
+            user_id=user_id,
+            text=text,
+        )
     else:
-        # всё остальное — в общий обработчик
-        reply_text, attachments = await dialog_service.handle_message(user_id, text)
+        # После старта:
+        #  - текст до выбора категории/подтипа почти не ожидаем
+        #  - но пусть обрабатывает его категорийный сервис (он вернёт "используйте кнопки")
+        reply_text, attachments = await category_dialog_service.handle_message(
+            user_id=user_id,
+            text=text,
+        )
 
     client = MaxClient()
     try:
@@ -56,11 +64,18 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
         logger.warning("Invalid message_callback event: %s", event)
         return
 
-    # все callback-и (категории, подтипы, адрес, слоты и т.д.) обрабатывает один сервис
-    reply_text, attachments = await dialog_service.handle_callback(
-        user_id=user_id,
-        payload=payload,
-    )
+    # Сначала пытаемся обработать payload как категорийный (cat:/sub:)
+    if payload.startswith("cat:") or payload.startswith("sub:"):
+        reply_text, attachments = await category_dialog_service.handle_callback(
+            user_id=user_id,
+            payload=payload,
+        )
+    else:
+        # Остальное отдаём старому диалогу
+        reply_text, attachments = await old_dialog_service.handle_callback(
+            user_id=user_id,
+            payload=payload,
+        )
 
     client = MaxClient()
     try:
