@@ -117,10 +117,13 @@ async def notify_master_request_created(request_id: int) -> None:
         if isinstance(req.date_iso, datetime):
             lines.append(f"📅 Дата: {req.date_iso.strftime('%d.%m.%Y')}")
             date_iso_str = req.date_iso.date().isoformat()
+        elif hasattr(req.date_iso, "isoformat"):  # date
+            lines.append(f"📅 Дата: {req.date_iso.strftime('%d.%m.%Y')}")
+            date_iso_str = req.date_iso.isoformat()
         else:
-            date_iso_str = req.date_iso
+            date_iso_str = str(req.date_iso) if req.date_iso else None
             if req.date_iso:
-                lines.append(f"📅 Дата: {req.date_iso}")
+                lines.append(f"📅 Дата: {date_iso_str}")
 
         if req.time_slot:
             lines.append(f"⏰ Время/слот: {req.time_slot}")
