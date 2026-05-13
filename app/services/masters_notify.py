@@ -1,11 +1,11 @@
 from typing import List, Optional
 from datetime import datetime, timedelta
 
+import logging
+
 from app.db.session import AsyncSessionLocal
 from app.db.models import ServiceRequest, Master
-from max_client_second_bot import MaxClientSecondBot
-
-import logging
+from max_client import MaxClient  # используем тот же клиент, что и для канала
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,14 @@ def _build_google_calendar_url(
 
 
 async def notify_master_request_created(request_id: int) -> None:
+    """
+    Уведомляет мастера о созданной заявке:
+    - читает ServiceRequest и Master,
+    - собирает текст + кнопки (Яндекс, Google),
+    - отправляет мастеру личное сообщение через MaxClient.
+    """
     logger.info(f"notify_master_request_created: request_id={request_id}")
+
     async with AsyncSessionLocal() as session:
         req = await session.get(ServiceRequest, request_id)
         if not req or not req.master_id:
@@ -87,7 +94,7 @@ async def notify_master_request_created(request_id: int) -> None:
 
         lines: List[str] = [f"📝 Заявка № {req.id}"]
 
-        if req.service_title or req.subtype:
+        if getattr(req, "service_title", None) or getattr(req, "subtype", None):
             lines.append(f"🔧 Услуга: {req.service_title or req.subtype}")
 
         if req.problem_description:
@@ -166,10 +173,13 @@ async def notify_master_request_created(request_id: int) -> None:
             ]
 
         logger.info(f"notify_master_request_created: sending to master {master.max_user_id}")
-        client = MaxClientSecondBot()
+
+        client = MaxClient()
         try:
-            resp = await client.send_text_to_user(
-                user_id=master.max_user_id,
+            # ВАЖНО: здесь нужно использовать метод, который реально у тебя есть.
+            # Если в max_client есть только send_text_to_chat, и ЛС мастеру — это чат с id = max_user_id:
+            resp = await client.send_text_to_chat(
+                chat_id=master.max_user_id,
                 text=text,
                 attachments=attachments,
             )
