@@ -1,6 +1,11 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
+
+# Загружаем .env из корня проекта
+BASE_DIR = Path(__file__).resolve().parent.parent  # app/.. = service-bot
+load_dotenv(BASE_DIR / ".env")
 
 from app.api.max_webhook import router as max_router
 from app.api.master_auth import router as master_auth_router
