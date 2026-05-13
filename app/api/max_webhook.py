@@ -1,14 +1,13 @@
-# app/api/max_webhook.py
 import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, Request, BackgroundTasks
 
-from max_client import MaxClient  # поправь путь, если файл лежит в другом месте
-from app.services.old_dialog_service import dialog_service # твой модуль диалогов
+from max_client import MaxClient
+from app.services.old_dialog_service import dialog_service as old_dialog_service
+from app.services.category_dialog_service import category_dialog_service
 
 router = APIRouter()
-
 logger = logging.getLogger(__name__)
 
 MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"
@@ -18,24 +17,29 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     message = event.get("message") or {}
     sender = message.get("sender") or {}
     body = message.get("body") or {}
-    chat = message.get("chat") or {}
 
     user_id = sender.get("user_id")
     text = body.get("text", "")
-    chat_id = chat.get("chat_id")
 
     if not user_id:
         logger.warning("message_created without user_id: %s", event)
         return
 
-    # передаём chat_id в диалог, чтобы он попал в ServiceRequest
-    if chat_id is not None:
-        dialog_service.set_chat_id(user_id, chat_id)
-
-    reply_text, attachments = await dialog_service.handle_message(
-        user_id=user_id,
-        text=text,
-    )
+    # На старте всегда запускаем выбор категории
+    lower = text.strip().lower()
+    if lower in ("/start", "новая заявка", "заявка"):
+        reply_text, attachments = await category_dialog_service.handle_message(
+            user_id=user_id,
+            text=text,
+        )
+    else:
+        # После старта:
+        #  - текст до выбора категории/подтипа почти не ожидаем
+        #  - но пусть обрабатывает его категорийный сервис (он вернёт "используйте кнопки")
+        reply_text, attachments = await category_dialog_service.handle_message(
+            user_id=user_id,
+            text=text,
+        )
 
     client = MaxClient()
     try:
@@ -49,52 +53,38 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
 
 
 async def handle_message_callback(event: Dict[str, Any]) -> None:
-    """
-    Обработка нажатия на callback-кнопку (update_type == 'message_callback').
-
-    Формат из лога:
-    {
-      "callback": {
-        "timestamp": ...,
-        "callback_id": "...",
-        "user": { "user_id": 40398020, ... },
-        "payload": "address_mode:workshop"
-      },
-      "message": {...},
-      "timestamp": ...,
-      "user_locale": "ru",
-      "update_type": "message_callback"
-    }
-    """
     callback = event.get("callback") or {}
     user = callback.get("user") or {}
+    payload = callback.get("payload")
 
     user_id = user.get("user_id")
     callback_id = callback.get("callback_id")
-    payload = callback.get("payload")
 
     if not user_id or not callback_id or payload is None:
         logger.warning("Invalid message_callback event: %s", event)
         return
 
-    reply_text, attachments = await dialog_service.handle_callback(
-        user_id=user_id,
-        payload=payload,
-    )
+    # Сначала пытаемся обработать payload как категорийный (cat:/sub:)
+    if payload.startswith("cat:") or payload.startswith("sub:"):
+        reply_text, attachments = await category_dialog_service.handle_callback(
+            user_id=user_id,
+            payload=payload,
+        )
+    else:
+        # Остальное отдаём старому диалогу
+        reply_text, attachments = await old_dialog_service.handle_callback(
+            user_id=user_id,
+            payload=payload,
+        )
 
     client = MaxClient()
     try:
-        # Если attachments is None — очищаем клавиатуру (attachments=[]).
-        # Если attachments не None — подставляем новую клавиатуру.
-        message: Dict[str, Any] = {"text": reply_text}
-        if attachments is None:
-            message["attachments"] = []
-        else:
-            message["attachments"] = attachments
+        message_out: Dict[str, Any] = {"text": reply_text}
+        message_out["attachments"] = [] if attachments is None else attachments
 
         await client.answer_callback(
             callback_id=callback_id,
-            message=message,
+            message=message_out,
             notification=None,
         )
     finally:
@@ -113,7 +103,6 @@ async def max_webhook(request: Request, background_tasks: BackgroundTasks) -> Di
     elif update_type == "message_callback":
         background_tasks.add_task(handle_message_callback, body)
     else:
-        # игнорируем bot_started и прочие
         logger.debug("Ignored update_type: %s", update_type)
 
     return {"success": True}

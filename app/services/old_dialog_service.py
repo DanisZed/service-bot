@@ -81,10 +81,6 @@ class DialogService:
         return self._sessions[user_id]
 
     def set_chat_id(self, user_id: int, chat_id: Optional[int]) -> None:
-        """
-        Если нужно, можно вызывать из вебхука, чтобы привязать chat_id.
-        Сейчас в логике ниже chat_id не используется, но поле есть.
-        """
         ctx = self._get_ctx(user_id)
         ctx.chat_id = chat_id
 
@@ -99,28 +95,14 @@ class DialogService:
         return None
 
     def _format_pretty_date(self, date_str: str) -> str:
-        """
-        '2026-05-15' -> 'Четверг, 15.05.26'
-        """
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         weekday = WEEKDAY_FULL_RU[d.weekday()]
         return f"{weekday}, {d.strftime('%d.%m.%y')}"
 
-    # ---------- Заглушка БД для занятых слотов ----------
-
     async def _get_booked_slots_for_date(self, date_str: str) -> set[str]:
-        """
-        TODO: заменить на реальный запрос к БД.
-
-        Должна возвращать множество payload'ов занятых слотов вида:
-        'slot_time:YYYY-MM-DD:09:00-10:00'
-        """
         return set()
 
-    # ---------- Кнопки ----------
-
     def _inline_keyboard(self, rows: List[List[dict]]) -> List[dict]:
-        # rows: список рядов; в каждом ряду — список кнопок
         return [
             {
                 "type": "inline_keyboard",
@@ -165,15 +147,6 @@ class DialogService:
         )
 
     def _build_slot_options(self) -> List[dict]:
-        """
-        Строит список слотов на ближайшие 6 дней:
-        [
-          {"text": "Сегодня", "payload": "slot:2026-05-12"},
-          {"text": "Завтра", "payload": "slot:2026-05-13"},
-          {"text": "Чт, 15.05", "payload": "slot:2026-05-15"},
-          ...
-        ]
-        """
         today = datetime.now().date()
         options: List[dict] = []
 
@@ -199,9 +172,6 @@ class DialogService:
         return options
 
     def _buttons_slot_dates(self) -> List[dict]:
-        """
-        Клавиатура для выбора даты: 6 ближайших дней, 2 ряда по 3.
-        """
         options = self._build_slot_options()
         row1 = options[0:3]
         row2 = options[3:6]
@@ -235,11 +205,6 @@ class DialogService:
         return self._inline_keyboard(rows)
 
     async def _buttons_time_slots(self, date_str: str) -> List[dict]:
-        """
-        Клавиатура для выбора времени на указанную дату.
-        9 слотов, 3 ряда по 3. Для занятых слотов текст 'ЗАНЯТО'.
-        payload слота: slot_time:<date>:<start>-<end>
-        """
         booked = await self._get_booked_slots_for_date(date_str)
 
         buttons: List[dict] = []
@@ -265,13 +230,7 @@ class DialogService:
 
         return self._inline_keyboard(rows)
 
-    # ---------- Хелперы ссылок ----------
-
     def _build_yandex_url(self, address: Optional[str]) -> Optional[str]:
-        """
-        HTTPS-ссылка для Яндекс.Навигатора (как в твоём Telegram-боте).
-        Если заявка в мастерскую — навигация не нужна.
-        """
         if not address or address == "Мастерская":
             return None
         return f"https://yandex.ru/navi?text={address.replace(' ', '+')}"
@@ -287,9 +246,6 @@ class DialogService:
         phone: Optional[str],
         tz: str = "Europe/Moscow",
     ) -> str:
-        """
-        Строит ссылку "Добавить в Google Календарь" по старой логике.
-        """
         order_part = f"Заявка №{order_no}" if order_no is not None else "Заявка"
         text_param = order_part.replace(" ", "+")
 
@@ -343,13 +299,7 @@ class DialogService:
         google_url = base + "?" + "&".join(parts)
         return google_url
 
-    # ---------- Основная логика по тексту ----------
-
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
-        """
-        Обработка обычных текстовых сообщений (message_created).
-        Возвращает (text, attachments) для отправки через /messages.
-        """
         text_clean = text.strip()
         text_lower = text_clean.lower()
 
@@ -447,7 +397,7 @@ class DialogService:
 
             data = {
                 "user_id": user_id,
-                "chat_id": user_id,  # используем user_id как chat_id, чтобы пройти валидацию
+                "chat_id": user_id,  # используем user_id как chat_id
                 "client_id": None,
                 "client_name": ctx.name,
                 "client_phone": ctx.phone,
@@ -486,8 +436,6 @@ class DialogService:
             "Привет! Давай оформим заявку. Напиши, пожалуйста, какая услуга нужна.",
             None,
         )
-
-    # ---------- Логика по callback (payload) ----------
 
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
         ctx = self._get_ctx(user_id)
@@ -555,8 +503,6 @@ class DialogService:
             "Команда уже не актуальна. Напиши, пожалуйста, текстом, что хочешь сделать.",
             None,
         )
-
-    # ---------- Отправка заявки в чат ----------
 
     async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
         request_no = ctx.request_id if ctx.request_id is not None else "—"
