@@ -14,7 +14,7 @@ class CategoryDialogService:
     Первый этап диалога: выбор категории и вида техники.
 
     Сценарий:
-      1) /start → показываем категории
+      1) /start → показываем категорию
       2) пользователь выбирает категорию (cat:<code>)
       3) показываем подтипы (виды техники)
       4) пользователь выбирает подтип (sub:<code>)
@@ -74,7 +74,8 @@ class CategoryDialogService:
         category_code: str,
     ) -> Tuple[str, List[dict]]:
         dialog_state_store.update(
-            user_id, chat_id,
+            user_id,
+            chat_id,
             step="choose_subtype",
             main_category=category_code,
         )
@@ -96,23 +97,26 @@ class CategoryDialogService:
         Когда пользователь выбрал подтип:
           - сохраняем main_category и subtype в глобальном состоянии
           - инициализируем старый DialogContext:
-              * service = "<категория> / <подтип>" (пока упрощённо по кодам)
+              * service = "<подтип>" (пока упрощённо по коду)
               * state = ADDRESS_MODE (сразу спрашиваем, мастерская или адрес)
           - отправляем первый вопрос старого диалога.
         """
         # Сохраняем подтип в общем состоянии (на случай, если пригодится)
         dialog_state_store.update(
-            user_id, chat_id,
+            user_id,
+            chat_id,
             step="category_finished",
             subtype=subtype_code,
         )
 
-        # Инициализируем старый диалог:
-        # сервис строим из кодов, позже можно подставить нормальные имена
+        # Инициализируем старый диалог
         service_title = f"{subtype_code}"
-        ctx = old_dialog_service._get_ctx(user_id)  # используем внутренний метод старого сервиса
+        ctx = old_dialog_service._get_ctx(user_id)
         ctx.service = service_title
-        ctx.state = old_dialog_service.DialogState.ADDRESS_MODE
+
+        # ВАЖНО: используем то же состояние, что и старый диалог
+        # предполагаем, что в old_dialog_service есть константа ADDRESS_MODE
+        ctx.state = old_dialog_service.ADDRESS_MODE
 
         text = (
             f"Записал: {service_title}.\n"
