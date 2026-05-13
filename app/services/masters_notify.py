@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional
 from datetime import datetime, timedelta
 
@@ -5,9 +6,11 @@ import logging
 
 from app.db.session import AsyncSessionLocal
 from app.db.models import ServiceRequest, Master
-from max_client import MaxClient  # используем тот же клиент, что и для канала
+from max_client import MaxClient
 
 logger = logging.getLogger(__name__)
+
+MAX_SECOND_BOT_TOKEN = os.getenv("MAX_SECOND_BOT_TOKEN")
 
 
 def _build_yandex_url(address: Optional[str]) -> Optional[str]:
@@ -180,7 +183,7 @@ async def notify_master_request_created(request_id: int) -> None:
 
         logger.info(f"notify_master_request_created: sending to master {master.max_user_id}")
 
-        client = MaxClient()
+        client = MaxClient(token=MAX_SECOND_BOT_TOKEN)
         try:
             resp = await client.send_text_to_user(
                 user_id=master.max_user_id,
