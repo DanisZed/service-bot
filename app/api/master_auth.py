@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import secrets
 
@@ -50,7 +50,8 @@ async def request_login_code(
         )
 
     code = f"{secrets.randbelow(999999):06d}"  # 6-значный код
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    # сохраняем в UTC
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     master.login_code = code
     master.login_code_expires_at = expires_at
@@ -100,10 +101,18 @@ async def verify_login_code(
     if not master:
         raise HTTPException(status_code=400, detail="Invalid code")
 
-    if (
-        not master.login_code_expires_at
-        or master.login_code_expires_at < datetime.utcnow()
-    ):
+    # Аккуратная проверка срока действия с учётом таймзоны и None
+    expires_at = master.login_code_expires_at
+    if not isinstance(expires_at, datetime):
+        raise HTTPException(status_code=400, detail="Code expired")
+
+    now = datetime.now(timezone.utc)
+
+    # если вдруг в БД хранится naive datetime — приводим к UTC
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at < now:
         raise HTTPException(status_code=400, detail="Code expired")
 
     # одноразовый код: очищаем
@@ -114,7 +123,7 @@ async def verify_login_code(
     payload_jwt = {
         "sub": str(master.id),
         "role": "master",
-        "exp": datetime.utcnow() + timedelta(days=7),
+        "exp": datetime.now(timezone.utc) + timedelta(days=7),
     }
     access_token = jwt.encode(payload_jwt, SECRET_KEY, algorithm="HS256")
 
