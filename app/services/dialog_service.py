@@ -275,22 +275,21 @@ class UnifiedDialogService:
         self._sessions[user_id] = DialogContext(state=DialogState.CHOOSE_CATEGORY)
         async with AsyncSessionLocal() as session:
             categories = await list_categories(session)
+
+        # ВЕРТИКАЛЬНЫЕ КАТЕГОРИИ: одна кнопка = одна строка
         rows: List[List[dict]] = []
-        row: List[dict] = []
         for cat in categories:
-            row.append(
-                {
-                    "type": "callback",
-                    "text": cat.name,
-                    "payload": f"cat:{cat.code}",
-                    "intent": "default",
-                }
+            rows.append(
+                [
+                    {
+                        "type": "callback",
+                        "text": cat.name,
+                        "payload": f"cat:{cat.code}",
+                        "intent": "default",
+                    }
+                ]
             )
-            if len(row) == 2:
-                rows.append(row)
-                row = []
-        if row:
-            rows.append(row)
+
         kb = self._inline_keyboard(rows)
         return "Выберите категорию техники:", kb
 
@@ -415,22 +414,19 @@ class UnifiedDialogService:
             async with AsyncSessionLocal() as session:
                 subtypes = await list_subtypes_by_category(session, category_code)
 
+            # ВЕРТИКАЛЬНЫЕ ПОДТИПЫ: одна кнопка = одна строка
             rows: List[List[dict]] = []
-            row: List[dict] = []
             for st in subtypes:
-                row.append(
-                    {
-                        "type": "callback",
-                        "text": st.name,
-                        "payload": f"sub:{st.code}",
-                        "intent": "default",
-                    }
+                rows.append(
+                    [
+                        {
+                            "type": "callback",
+                            "text": st.name,
+                            "payload": f"sub:{st.code}",
+                            "intent": "default",
+                        }
+                    ]
                 )
-                if len(row) == 2:
-                    rows.append(row)
-                    row = []
-            if row:
-                rows.append(row)
             kb = self._inline_keyboard(rows)
             return "Выберите вид техники:", kb
 
