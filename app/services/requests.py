@@ -1,5 +1,7 @@
 from typing import Any, Dict
 
+from datetime import datetime, date
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ServiceRequest
@@ -23,6 +25,13 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
     missing = [f for f in required_fields if f not in data or data[f] is None]
     if missing:
         raise ValueError(f"Missing required fields for ServiceRequest: {', '.join(missing)}")
+
+    raw_date_iso = data.get("date_iso")
+    if isinstance(raw_date_iso, str):
+        try:
+            data["date_iso"] = datetime.strptime(raw_date_iso, "%Y-%m-%d").date()
+        except ValueError:
+            data["date_iso"] = None
 
     obj = ServiceRequest(
         status="new",
