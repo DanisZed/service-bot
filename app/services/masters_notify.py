@@ -182,10 +182,8 @@ async def notify_master_request_created(request_id: int) -> None:
 
         client = MaxClient()
         try:
-            # ВАЖНО: здесь нужно использовать метод, который реально у тебя есть.
-            # Если в max_client есть только send_text_to_chat, и ЛС мастеру — это чат с id = max_user_id:
-            resp = await client.send_text_to_chat(
-                chat_id=master.max_user_id,
+            resp = await client.send_text_to_user(
+                user_id=master.max_user_id,
                 text=text,
                 attachments=attachments,
             )
