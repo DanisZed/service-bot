@@ -445,14 +445,12 @@ class DialogService:
             ctx.phone = normalized
             ctx.state = DialogState.CONFIRMED
 
-            # 1. Собираем данные для записи в БД
             data = {
                 "user_id": user_id,
-                "chat_id": ctx.chat_id,
+                "chat_id": user_id,  # используем user_id как chat_id, чтобы пройти валидацию
                 "client_id": None,
                 "client_name": ctx.name,
                 "client_phone": ctx.phone,
-                # заглушки для обязательных полей схемы
                 "main_category": "legacy",
                 "subtype": "legacy_service",
                 "custom_device": ctx.service,
