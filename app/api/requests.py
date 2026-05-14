@@ -22,6 +22,7 @@ class ServiceRequestOut(BaseModel):
 
     # Привязка к мастеру
     master_id: Optional[int] = None
+    master_seq: int | None = None
 
     # Клиент
     client_id: Optional[int] = None
