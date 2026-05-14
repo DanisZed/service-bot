@@ -12,6 +12,36 @@ logger = logging.getLogger(__name__)
 
 MAX_SECOND_BOT_TOKEN = os.getenv("MAX_SECOND_BOT_TOKEN")
 
+# Словарь (можно вынести в начало файла или импортировать)
+SUBTYPE_NAMES = {
+    # Крупная бытовая техника
+    "washing_machine": "Стиральные машины",
+    "dishwasher": "Посудомоечные машины",
+    "dryer": "Сушильные машины",
+    "water_heater": "Водонагреватели",
+    "fridge": "Холодильники и морозильники",
+    # Кухонная техника
+    "oven": "Электрические духовки",
+    "cooking_surface": "Электрические плиты",
+    "microwave": "Микроволновые печи",
+    # Электроприборы и инструменты
+    "welding": "Сварочные аппараты",
+    "stabilizer_ups": "Стабилизаторы и бесперебойники",
+    "power_tools": "Электроинструмент",
+    # Климатическая техника
+    "heater": "Обогреватели",
+    "air_conditioner": "Кондиционеры",
+    # Мелкая кухонная техника
+    "kitchen_iron_steamer": "Отпариватели и утюги",
+    "kitchen_mixer_blender": "Миксеры и блендеры",
+    "meat_grinder_processor": "Мясорубки и комбайны",
+    "baker_multicooker": "Хлебопечи и мультиварки",
+    # Мелкая бытовая техника
+    "home_iron_steamer": "Парогенераторы и утюги",
+    "vacuum": "Пылесосы",
+    "hair_care": "Фены и стайлеры",
+    "humidifier": "Увлажнители",
+
 
 def _build_yandex_url(address: Optional[str]) -> Optional[str]:
     if not address or address == "Мастерская":
@@ -101,7 +131,7 @@ async def notify_master_request_created(request_id: int) -> None:
         lines: List[str] = [f"📝 ЗАЯВКА № {req.id}\n"]
 
         if getattr(req, "service_title", None) or getattr(req, "subtype", None):
-            lines.append(f"🔧 Вид: {req.subtype}")
+            lines.append(f"🔧 Вид техники: {SUBTYPE_NAMES.get(req.subtype, req.subtype)}")
 
         if req.problem_description:
             lines.append(f"📄 Описание: {req.problem_description}")
