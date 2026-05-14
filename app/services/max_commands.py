@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional, Tuple, List
 
-PANEL_URL = "https://daniszed.keenetic.pro/login"  # потом вынесешь в .env
+PANEL_URL = "https://panel.daniszed.keenetic.pro/login"  # потом вынесешь в .env
 
 
 async def handle_command(
