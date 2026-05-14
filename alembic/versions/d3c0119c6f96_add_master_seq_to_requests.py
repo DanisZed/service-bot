@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.sql import text
 
 # revision identifiers, used by Alembic.
-revision = "add_master_seq_to_requests"
-down_revision = "d3c0119c6f96"
+revision = "d3c0119c6f96"
+down_revision = "9ac3e1d2ac4b"
 branch_labels = None
 depends_on = None
 
