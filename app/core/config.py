@@ -1,6 +1,7 @@
 import os
 from pydantic import BaseModel
 
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 class Settings(BaseModel):
     max_bot_token: str = os.getenv("MAX_BOT_TOKEN", "")
