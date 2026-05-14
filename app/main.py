@@ -31,6 +31,7 @@ origins = [
     "http://192.168.2.122:5173",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://panel.daniszed.keenetic.pro",
 ]
 
 app.add_middleware(
