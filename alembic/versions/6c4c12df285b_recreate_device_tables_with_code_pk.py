@@ -13,9 +13,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    
     conn = op.get_bind()
 
-    # безопасно дропаем constraint только если он существует
+    # безопасно дропаем constraint, только если он существует
     conn.execute(
         text(
             """
@@ -35,6 +36,28 @@ def upgrade() -> None:
             """
         )
     )
+
+    # безопасно дропаем колонку, только если она существует
+    conn.execute(
+        text(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns c
+                    WHERE c.table_name = 'service_request'
+                      AND c.column_name = 'device_subtype_id'
+                ) THEN
+                    ALTER TABLE service_request
+                    DROP COLUMN device_subtype_id;
+                END IF;
+            END$$;
+            """
+        )
+    )
+
+    # дальше оставляешь твой существующий код upgrade...
     op.drop_column("service_request", "device_subtype_id")
 
     # 2. Дропаем старые таблицы
