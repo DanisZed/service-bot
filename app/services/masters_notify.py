@@ -41,6 +41,7 @@ SUBTYPE_NAMES = {
     "vacuum": "Пылесосы",
     "hair_care": "Фены и стайлеры",
     "humidifier": "Увлажнители",
+}
 
 
 def _build_yandex_url(address: Optional[str]) -> Optional[str]:
