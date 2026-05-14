@@ -1,10 +1,3 @@
-"""add master_seq to requests
-
-Revision ID: d3c0119c6f96
-Revises: 
-Create Date: 2026-05-14 17:49:22.367190
-
-"""
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.sql import text
@@ -17,21 +10,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 1. добавить колонку
+    # 1. Добавляем колонку master_seq в таблицу заявок
     op.add_column(
-        "requests",
+        "service_request",
         sa.Column("master_seq", sa.Integer(), nullable=True),
     )
 
-    # 2. заполнить master_seq для уже существующих заявок
+    # 2. Заполняем master_seq для существующих заявок
     conn = op.get_bind()
-
-    # сгруппировать по master_id и пронумеровать по возрастанию id
-    # синтаксис для PostgreSQL (window-функция)
     conn.execute(
         text(
             """
-            UPDATE requests r
+            UPDATE service_request r
             SET master_seq = sub.seq
             FROM (
                 SELECT id,
@@ -39,16 +29,13 @@ def upgrade() -> None:
                          PARTITION BY master_id
                          ORDER BY id
                        ) AS seq
-                FROM requests
+                FROM service_request
             ) AS sub
             WHERE r.id = sub.id;
             """
         )
     )
 
-    # 3. при желании можно сделать колонку NOT NULL
-    # op.alter_column("requests", "master_seq", nullable=False)
-
 
 def downgrade() -> None:
-    op.drop_column("requests", "master_seq")
+    op.drop_column("service_request", "master_seq")
