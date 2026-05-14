@@ -16,6 +16,12 @@ from app.api.auth_deeplink import router as auth_deeplink_router  # ← НОВЫ
 BASE_DIR = Path(__file__).resolve().parent.parent  # app/.. = service-bot
 load_dotenv(BASE_DIR / ".env")
 
+import logging, os
+logger = logging.getLogger(__name__)
+logger.info("MAIN DEBUG SECRET_KEY=%s MAX_BOT_TOKEN=%s",
+            os.getenv("SECRET_KEY"),
+            os.getenv("MAX_BOT_TOKEN"))
+
 
 app = FastAPI()
 
