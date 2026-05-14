@@ -30,12 +30,16 @@ async def verify_code(payload: VerifyCodeRequest):
 
 class ServiceRequest(BaseModel):
     id: int
+    master_seq: int | None = None
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     service_title: Optional[str] = None
     address: Optional[str] = None
     status: Optional[str] = None
     created_at: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
 
 
 @router.get("/requests", response_model=List[ServiceRequest])

@@ -1,7 +1,7 @@
 from typing import Any, Dict
-
 from datetime import datetime, date
 
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ServiceRequest
@@ -21,10 +21,19 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
     Остальное опционально.
     """
 
-    required_fields = ["user_id", "chat_id", "main_category", "subtype", "problem_description", "location_type"]
+    required_fields = [
+        "user_id",
+        "chat_id",
+        "main_category",
+        "subtype",
+        "problem_description",
+        "location_type",
+    ]
     missing = [f for f in required_fields if f not in data or data[f] is None]
     if missing:
-        raise ValueError(f"Missing required fields for ServiceRequest: {', '.join(missing)}")
+        raise ValueError(
+            f"Missing required fields for ServiceRequest: {', '.join(missing)}"
+        )
 
     raw_date_iso = data.get("date_iso")
     if isinstance(raw_date_iso, str):
@@ -33,14 +42,31 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
         except ValueError:
             data["date_iso"] = None
 
+    # --- расчёт master_seq per-мастер ---
+
+    master_id = data.get("master_id")
+
+    next_seq: int | None = None
+    if master_id is not None:
+        result = await session.execute(
+            select(func.coalesce(func.max(ServiceRequest.master_seq), 0)).where(
+                ServiceRequest.master_id == master_id
+            )
+        )
+        current_max = result.scalar_one()
+        next_seq = current_max + 1
+
+    # --- создание заявки ---
+
     obj = ServiceRequest(
         status="new",
         source="max_bot",  # источник заявок из MAX
         user_external_id=data["user_id"],
         chat_external_id=data["chat_id"],
 
-        # НОВОЕ: привязка к мастеру (может быть None)
-        master_id=data.get("master_id"),
+        # привязка к мастеру и его внутренний номер
+        master_id=master_id,
+        master_seq=next_seq,
 
         client_id=data.get("client_id"),
         client_name=data.get("client_name"),
