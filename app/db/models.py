@@ -40,7 +40,7 @@ class ServiceRequest(Base):
 
     # НОВОЕ: связь с мастером
     master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
-    master_seq = sa.Column(sa.Integer, nullable=True)
+    master_seq = Column(Integer, nullable=True)
 
     status = Column(String(32), default="new", nullable=False)
     opened_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
