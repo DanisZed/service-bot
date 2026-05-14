@@ -23,27 +23,26 @@ logger.info("MAIN DEBUG SECRET_KEY=%s MAX_BOT_TOKEN=%s",
             os.getenv("MAX_BOT_TOKEN"))
 
 
+origins = [
+    "https://panel.daniszed.keenetic.pro",
+    "http://panel.daniszed.keenetic.pro",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://192.168.2.122:5173",
+]
+
+
 app = FastAPI()
 
 
-# CORS
-origins = [
-    "http://192.168.2.122:5173",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://panel.daniszed.keenetic.pro",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://192.168.2.122:5173",
-    "http://192.168.2.122:8000",
-]
+
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,     # можно временно ["*"] для отладки
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],   # важно
+    allow_headers=["*"],   # важно
 )
 
 
