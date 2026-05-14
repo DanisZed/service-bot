@@ -12,6 +12,46 @@ logger = logging.getLogger(__name__)
 
 MAX_SECOND_BOT_TOKEN = os.getenv("MAX_SECOND_BOT_TOKEN")
 
+# Словарь (можно вынести в начало файла или импортировать)
+SUBTYPE_NAMES = {
+    # Крупная бытовая техника
+    "washing_machine": "Стиральные машины",
+    "dishwasher": "Посудомоечные машины",
+    "dryer": "Сушильные машины",
+    "water_heater": "Водонагреватели",
+    "fridge": "Холодильники и морозильники",
+    # Кухонная техника
+    "oven": "Электрические духовки",
+    "cooking_surface": "Электрические плиты",
+    "microwave": "Микроволновые печи",
+    # Электроприборы и инструменты
+    "welding": "Сварочные аппараты",
+    "stabilizer_ups": "Стабилизаторы и бесперебойники",
+    "power_tools": "Электроинструмент",
+    # Климатическая техника
+    "heater": "Обогреватели",
+    "air_conditioner": "Кондиционеры",
+    # Мелкая кухонная техника
+    "kitchen_iron_steamer": "Отпариватели и утюги",
+    "kitchen_mixer_blender": "Миксеры и блендеры",
+    "meat_grinder_processor": "Мясорубки и комбайны",
+    "baker_multicooker": "Хлебопечи и мультиварки",
+    # Мелкая бытовая техника
+    "home_iron_steamer": "Парогенераторы и утюги",
+    "vacuum": "Пылесосы",
+    "hair_care": "Фены и стайлеры",
+    "humidifier": "Увлажнители",
+}
+
+# Использование
+if getattr(req, "service_title", None) or getattr(req, "subtype", None):
+    subtype_value = getattr(req, "subtype", None)
+    if subtype_value:
+        # Получаем русское название из словаря, если ключ найден
+        # Иначе оставляем исходное значение (на случай, если появятся новые типы)
+        subtype_display = SUBTYPE_NAMES.get(subtype_value, subtype_value)
+        lines.append(f"🔧 Вид техники: {subtype_display}")
+
 
 def _build_yandex_url(address: Optional[str]) -> Optional[str]:
     if not address or address == "Мастерская":
@@ -98,23 +138,28 @@ async def notify_master_request_created(request_id: int) -> None:
             print("### EXIT: no master or no max_user_id")
             return
 
-        lines: List[str] = [f"📝 Заявка № {req.id}"]
+        lines: List[str] = [f"📝 ЗАЯВКА № {req.id}\n"]
 
         if getattr(req, "service_title", None) or getattr(req, "subtype", None):
-            lines.append(f"🔧 Услуга: {req.service_title or req.subtype}")
+            subtype_value = getattr(req, "subtype", None)
+            if subtype_value:
+                # Получаем русское название из словаря, если ключ найден
+                # Иначе оставляем исходное значение (на случай, если появятся новые типы)
+                subtype_display = SUBTYPE_NAMES.get(subtype_value, subtype_value)
+                lines.append(f"🔧 Вид техники: {subtype_display}")
 
         if req.problem_description:
             lines.append(f"📄 Описание: {req.problem_description}")
 
         if req.address == "Мастерская":
-            lines.append("🏭 Место выполнения: мастерская")
+            lines.append("🏭 Мастерская")
         elif req.address:
             lines.append(f"📍 Адрес: {req.address}")
         else:
             lines.append("📍 Адрес: не указан")
 
         if req.address_details:
-            lines.append(f"📌 Уточнение по адресу: {req.address_details}")
+            lines.append(f"❗️ Уточнение по адресу: {req.address_details}")
 
         date_iso_str: Optional[str] = None
         if isinstance(req.date_iso, datetime):
@@ -129,7 +174,7 @@ async def notify_master_request_created(request_id: int) -> None:
                 lines.append(f"📅 Дата: {date_iso_str}")
 
         if req.time_slot:
-            lines.append(f"⏰ Время/слот: {req.time_slot}")
+            lines.append(f"⏰ Время: {req.time_slot}")
 
         if req.client_name:
             lines.append(f"🙋‍♂️ Клиент: {req.client_name}")

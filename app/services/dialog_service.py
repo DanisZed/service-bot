@@ -392,7 +392,7 @@ class UnifiedDialogService:
                     "service_title": ctx.service_title or ctx.subtype,
                     "problem_description": ctx.description,
                     "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
-                    "address": None if ctx.address == "Мастерская" else ctx.address,
+                    "address": "Мастерская" if ctx.address == "Мастерская" else ctx.address,
                     "address_details": ctx.address_details,
                     "date_iso": ctx.date_iso,
                     "time_slot": ctx.slot,
