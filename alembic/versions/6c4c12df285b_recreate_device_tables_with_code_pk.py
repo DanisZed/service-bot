@@ -12,8 +12,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    conn = bind.connect()
+    conn = op.get_bind()
 
     # безопасно дропаем constraint только если он существует
     conn.execute(
