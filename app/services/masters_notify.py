@@ -141,12 +141,7 @@ async def notify_master_request_created(request_id: int) -> None:
         lines: List[str] = [f"📝 ЗАЯВКА № {req.id}\n"]
 
         if getattr(req, "service_title", None) or getattr(req, "subtype", None):
-            subtype_value = getattr(req, "subtype", None)
-            if subtype_value:
-                # Получаем русское название из словаря, если ключ найден
-                # Иначе оставляем исходное значение (на случай, если появятся новые типы)
-                subtype_display = SUBTYPE_NAMES.get(subtype_value, subtype_value)
-                lines.append(f"🔧 Вид техники: {subtype_display}")
+            lines.append(f"🔧 Вид техники: {SUBTYPE_NAMES.get(req.subtype, req.subtype)}")
 
         if req.problem_description:
             lines.append(f"📄 Описание: {req.problem_description}")
