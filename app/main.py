@@ -3,6 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware  # ← добавить
+from app.api import me
 
 # Загружаем .env из корня проекта
 BASE_DIR = Path(__file__).resolve().parent.parent  # app/.. = service-bot
@@ -30,6 +31,7 @@ app.add_middleware(
 )
 
 # Роутеры
+app.include_router(me.router)
 app.include_router(max_router)
 app.include_router(master_auth_router)
 app.include_router(requests_router)
