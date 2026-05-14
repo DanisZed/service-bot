@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Optional, Tuple, List
 
-PANEL_URL = "http://localhost:5173/login"  # потом вынесешь в .env
+PANEL_URL = "http://:192.168.2.122:5173/login"  # потом вынесешь в .env
 
 
 async def handle_command(
