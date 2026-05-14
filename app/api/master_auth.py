@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/master/auth", tags=["master-auth"])
 
 MAX_SECOND_BOT_TOKEN = os.getenv("MAX_SECOND_BOT_TOKEN")
-SECRET_KEY = os.getenv("SECRET_KEY")  # заменишь на свой
+SECRET_KEY = os.getenv("SECRET_KEY", "4gOWnBzTs7ec0HTS12rpErnILvUGq-ZyK2HFWsdBRK5QVAGQeQnEgp1fmjEmzzbn1v3TAu_i2GLQQ14z7Es3QA")  # заменишь на свой
 
 
 async def get_db():
