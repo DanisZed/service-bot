@@ -41,4 +41,5 @@ async def get_current_master(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Master not found",
         )
+
     return master

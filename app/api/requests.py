@@ -84,10 +84,15 @@ async def list_requests(
     current_master=Depends(get_current_master),
 ):
     """
-    Список заявок. Пока без пагинации.
+    Список заявок для текущего мастера.
     Если передан ?status=..., фильтруем по нему.
     """
-    stmt = select(ServiceRequest).order_by(ServiceRequest.id.desc())
+    stmt = (
+        select(ServiceRequest)
+        .where(ServiceRequest.master_id == current_master.id)
+        .order_by(ServiceRequest.id.desc())
+    )
+
     if status:
         stmt = stmt.where(ServiceRequest.status == status)
 
@@ -103,7 +108,7 @@ async def get_request(
     current_master=Depends(get_current_master),
 ):
     req = await db.get(ServiceRequest, request_id)
-    if not req:
+    if not req or req.master_id != current_master.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
         )
@@ -118,7 +123,7 @@ async def update_request(
     current_master=Depends(get_current_master),
 ):
     req = await db.get(ServiceRequest, request_id)
-    if not req:
+    if not req or req.master_id != current_master.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
         )
