@@ -1,10 +1,19 @@
 import os
 import logging
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 import httpx
+from dotenv import load_dotenv  # ← добавили
 
 logger = logging.getLogger(__name__)
+
+# ==== ДОБАВЛЯЕМ ЗАГРУЗКУ .env ПРЯМО ЗДЕСЬ ====
+BASE_DIR = Path(__file__).resolve().parent  # это /home/servicebot/projects/service-bot
+env_path = BASE_DIR / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+# ============================================
 
 MAX_API_BASE_URL = "https://platform-api.max.ru"
 
