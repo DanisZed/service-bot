@@ -11,13 +11,29 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. Удаляем внешний ключ и колонку, которая ссылается на старую таблицу device_subtype
-    # Имя констрейнта можно оставить таким, если оно ровно такое, как в ошибке:
-    # "service_request_device_subtype_id_fkey"
-    op.drop_constraint(
-        "service_request_device_subtype_id_fkey",
-        "service_request",
-        type_="foreignkey",
+    def upgrade() -> None:
+    bind = op.get_bind()
+    conn = bind.connect()
+
+    # безопасно дропаем constraint только если он существует
+    conn.execute(
+        text(
+            """
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.table_constraints tc
+                    WHERE tc.constraint_name = 'service_request_device_subtype_id_fkey'
+                      AND tc.table_name = 'service_request'
+                      AND tc.constraint_type = 'FOREIGN KEY'
+                ) THEN
+                    ALTER TABLE service_request
+                    DROP CONSTRAINT service_request_device_subtype_id_fkey;
+                END IF;
+            END$$;
+            """
+        )
     )
     op.drop_column("service_request", "device_subtype_id")
 
