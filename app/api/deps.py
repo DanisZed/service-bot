@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import AsyncSessionLocal
 from app.db.models import Master
 
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME")
+SECRET_KEY = os.getenv("SECRET_KEY")
 security = HTTPBearer()
 
 
