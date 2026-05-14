@@ -4,7 +4,9 @@ from typing import Any, Dict
 from fastapi import APIRouter, Request, BackgroundTasks
 
 from max_client import MaxClient
-from app.services.dialog_service import dialog_service  # новый единый сервис
+from app.services.dialog_service import dialog_service
+from app.services.max_commands import handle_command  # НОВЫЙ ИМПОРТ
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -20,19 +22,22 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     user_id = sender.get("user_id")
     text = body.get("text", "")
 
-    # сразу после получения значений — безопасный лог
     logger.info("MY_DEBUG: message from user_id=%s body=%s", user_id, text)
 
     if not user_id:
         logger.warning("message_created without user_id: %s", event)
         return
 
-    lower = text.strip().lower()
+    # 1) Пытаемся обработать как команду (/panel и др.)
+    reply_text, attachments = await handle_command(user_id, text)
 
-    if lower in ("/start", "новая заявка", "заявка"):
-        reply_text, attachments = await dialog_service.start_or_reset(user_id)
-    else:
-        reply_text, attachments = await dialog_service.handle_message(user_id, text)
+    # 2) Если команда не распознана — идём в обычный диалог
+    if reply_text is None:
+        lower = text.strip().lower()
+        if lower in ("/start", "новая заявка", "заявка"):
+            reply_text, attachments = await dialog_service.start_or_reset(user_id)
+        else:
+            reply_text, attachments = await dialog_service.handle_message(user_id, text)
 
     client = MaxClient()
     try:
@@ -44,7 +49,7 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     finally:
         await client.close()
 
-    
+
 async def handle_message_callback(event: Dict[str, Any]) -> None:
     callback = event.get("callback") or {}
     user = callback.get("user") or {}
@@ -57,7 +62,6 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
         logger.warning("Invalid message_callback event: %s", event)
         return
 
-    # все callback-и (категории, подтипы, адрес, слоты и т.д.) обрабатывает один сервис
     reply_text, attachments = await dialog_service.handle_callback(
         user_id=user_id,
         payload=payload,
