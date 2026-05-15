@@ -1,3 +1,4 @@
+# app/main.py
 import os
 import logging
 from pathlib import Path
@@ -6,15 +7,13 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import me
-from app.api.max_webhook import router as max_router
-from app.api.master_auth import router as master_auth_router
+from app.api.me import router as me_router
 from app.api.requests import router as requests_router
-from app.api.auth_deeplink import router as auth_deeplink_router
-from app.api.auth import router as auth_router
+from app.api.master_auth import router as master_auth_router
+from app.api.max_webhook import router as max_webhook_router
 
-# Загружаем .env из корня проекта
-BASE_DIR = Path(__file__).resolve().parent.parent  # app/.. = service-bot
+# Загружаем .env
+BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 logger = logging.getLogger(__name__)
@@ -42,10 +41,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Роутеры
-app.include_router(me.router)
-app.include_router(max_router)
-app.include_router(master_auth_router)
+# Подключаем ТОЛЬКО нужные роутеры
+app.include_router(me_router)
 app.include_router(requests_router)
-app.include_router(auth_deeplink_router)
-app.include_router(auth_router)
+app.include_router(master_auth_router)
+app.include_router(max_webhook_router)
