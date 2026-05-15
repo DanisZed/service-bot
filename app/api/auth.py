@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from fastapi import APIRouter, Response, status
+from fastapi.responses import JSONResponse
 
 from app.api.deps import get_db
 from app.db.models import Master
@@ -53,3 +55,11 @@ async def login_via_max_deeplink(
     token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
     return TokenOut(access_token=token)
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(response: Response):
+    # имя куки должно совпадать с тем, как ты её выставляешь при логине
+    response.delete_cookie("access_token")
+    return {"detail": "Logged out"}

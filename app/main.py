@@ -10,6 +10,8 @@ from app.api.max_webhook import router as max_router
 from app.api.master_auth import router as master_auth_router
 from app.api.requests import router as requests_router
 from app.api.auth_deeplink import router as auth_deeplink_router  # ← НОВЫЙ ИМПОРТ
+from app.api.auth import router as auth_router
+from app.api import auth, me, requests  
 
 
 # Загружаем .env из корня проекта
@@ -52,3 +54,4 @@ app.include_router(max_router)
 app.include_router(master_auth_router)
 app.include_router(requests_router)
 app.include_router(auth_deeplink_router)  # ← ПОДКЛЮЧИЛИ DEEPLINK
+app.include_router(auth_router)
