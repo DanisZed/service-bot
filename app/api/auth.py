@@ -6,8 +6,6 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import get_db
 from app.db.models import Master
-#from app.core.security import create_access_token  # если у тебя уже есть функция
-# или используй тот же jwt.encode, что и сейчас для login_code
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
