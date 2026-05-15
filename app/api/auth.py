@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from fastapi import APIRouter, Response, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel  # ← добавляем
 
 from app.api.deps import get_db
 from app.db.models import Master
