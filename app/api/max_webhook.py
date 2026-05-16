@@ -1,3 +1,4 @@
+# app/api/max_webhook.py
 import logging
 from typing import Any, Dict
 
@@ -17,6 +18,9 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     message = event.get("message") or {}
     sender = message.get("sender") or {}
     body = message.get("body") or {}
+
+    # Временно логируем всё сообщение целиком
+    logger.info("RAW MAX MESSAGE: %r", message)
 
     user_id = sender.get("user_id")
     text = body.get("text", "")
