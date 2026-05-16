@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
-from app.core.config import SECRET_KEY  # или откуда ты сейчас берёшь SECRET_KEY
 from app.db.models import Master
 
 SECRET_KEY = "4gOWnBzTs7ec0HTS12rpErnILvUGq-ZyK2HFWsdBRK5QVAGQeQnEgp1fmjEmzzbn1v3TAu_i2GLQQ14z7Es3QA"

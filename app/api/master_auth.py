@@ -1,10 +1,10 @@
 # app/api/master_auth.py
-from datetime import datetime, timedelta, timezone
 import os
 import secrets
+from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
