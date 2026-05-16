@@ -5,8 +5,7 @@ from fastapi import APIRouter, Request, BackgroundTasks
 
 from max_client import MaxClient
 from app.services.dialog_service import dialog_service
-from app.services.max_commands import handle_command  # НОВЫЙ ИМПОРТ
-
+from app.services.max_commands import handle_command  # обработка /panel и др.
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,23 +20,45 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
 
     user_id = sender.get("user_id")
     text = body.get("text", "")
+    # пробуем достать payload/start-параметр, если он есть в событии
+    # (если у тебя другое поле — здесь поправим)
+    payload = body.get("payload") or body.get("start_param")
 
-    logger.info("MY_DEBUG: message from user_id=%s body=%s", user_id, text)
+    logger.info(
+        "MY_DEBUG: message from user_id=%s body=%s payload=%s",
+        user_id,
+        text,
+        payload,
+    )
 
     if not user_id:
         logger.warning("message_created without user_id: %s", event)
         return
 
-    # 1) Пытаемся обработать как команду (/panel и др.)
-    reply_text, attachments = await handle_command(user_id, text)
+    reply_text = None
+    attachments = None
 
-    # 2) Если команда не распознана — идём в обычный диалог
+    # 0) Обработка диплинка start=panel:
+    # если пользователь открыл бота по ссылке
+    # https://max.ru/id027308840424_bot?start=panel
+    # и MAX прокинул сюда payload="panel" — считаем это как команду /panel.
+    if isinstance(payload, str) and payload.strip().lower() == "panel":
+        # имитируем, что пользователь ввёл /panel
+        reply_text, attachments = await handle_command(user_id, "/panel")
+
+    # 1) Если диплинк не сработал или payload другой — пробуем обычную команду
+    if reply_text is None:
+        reply_text, attachments = await handle_command(user_id, text)
+
+    # 2) Если команда не распознана — идём в диалоговый сервис
     if reply_text is None:
         lower = text.strip().lower()
         if lower in ("/start", "новая заявка", "заявка"):
             reply_text, attachments = await dialog_service.start_or_reset(user_id)
         else:
-            reply_text, attachments = await dialog_service.handle_message(user_id, text)
+            reply_text, attachments = await dialog_service.handle_message(
+                user_id, text
+            )
 
     client = MaxClient()
     try:
@@ -82,7 +103,9 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
 
 
 @router.post("/max/webhook")
-async def max_webhook(request: Request, background_tasks: BackgroundTasks) -> Dict[str, Any]:
+async def max_webhook(
+    request: Request, background_tasks: BackgroundTasks
+) -> Dict[str, Any]:
     body = await request.json()
     logger.info("MAX WEBHOOK BODY: %s", body)
 

@@ -91,6 +91,56 @@ async def request_login_code(
 
     return {"ok": True}
 
+class RequestCodeByMaxOut(BaseModel):
+  code: str
+  login_url: str
+
+
+@router.post("/request-code-by-max", response_model=RequestCodeByMaxOut)
+async def request_login_code_by_max(
+    max_user_id: int = Query(..., description="user_id мастера в MAX"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Генерирует login_code для мастера по max_user_id и возвращает ссылку
+    для входа в панель. Ничего никуда не отправляет — код используется
+    первым ботом в кнопке.
+    """
+    result = await db.execute(
+        select(Master).where(Master.max_user_id == max_user_id)
+    )
+    master = result.scalars().first()
+
+    # если не нашли — создаём мастера на лету
+    if not master:
+        master = Master(
+            max_user_id=max_user_id,
+            is_active=1,
+            plan="free",
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(master)
+        await db.commit()
+        await db.refresh(master)
+
+    if not master.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Master is inactive",
+        )
+
+    code = f"{secrets.randbelow(999999):06d}"  # 6-значный код
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    master.login_code = code
+    master.login_code_expires_at = expires_at
+    await db.commit()
+
+    # dev-URL панели, можно вынести в конфиг
+    frontend_base = os.getenv("FRONTEND_BASE_URL", "http://192.168.2.122:5173")
+    login_url = f"{frontend_base}/login?code={code}"
+
+    return RequestCodeByMaxOut(code=code, login_url=login_url)
 
 @router.post("/verify-code", response_model=TokenOut)
 async def verify_login_code(
