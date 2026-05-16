@@ -110,16 +110,60 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
 async def max_webhook(
     request: Request, background_tasks: BackgroundTasks
 ) -> Dict[str, Any]:
-    body = await request.json()
-    logger.info("MAX WEBHOOK BODY: %s", body)
+  body = await request.json()
+  logger.info("MAX WEBHOOK BODY: %s", body)
 
-    update_type = body.get("update_type")
+  update_type = body.get("update_type")
 
-    if update_type == "message_created":
-        background_tasks.add_task(handle_message_created, body)
-    elif update_type == "message_callback":
-        background_tasks.add_task(handle_message_callback, body)
-    else:
-        logger.debug("Ignored update_type: %s", update_type)
+  if update_type == "message_created":
+      background_tasks.add_task(handle_message_created, body)
+  elif update_type == "message_callback":
+      background_tasks.add_task(handle_message_callback, body)
+  elif update_type == "bot_started":
+      background_tasks.add_task(handle_bot_started, body)
+  else:
+      logger.debug("Ignored update_type: %s", update_type)
 
-    return {"success": True}
+  return {"success": True}
+
+# app/api/max_webhook.py
+
+async def handle_bot_started(event: Dict[str, Any]) -> None:
+  user = event.get("user") or {}
+  user_id = user.get("user_id")
+  payload = event.get("payload")
+
+  logger.info(
+      "MAX BOT_STARTED: user_id=%s payload=%r event=%r",
+      user_id,
+      payload,
+      event,
+  )
+
+  if not user_id:
+      logger.warning("bot_started without user_id: %s", event)
+      return
+
+  reply_text = None
+  attachments = None
+
+  # если диплинк ...?start=panel — ведём себя как /panel
+  if isinstance(payload, str) and payload.strip().lower() == "panel":
+      reply_text, attachments = await handle_command(user_id, "/panel")
+  else:
+      # обычное приветствие без panel
+      reply_text = (
+          "Привет! Я бот Техник Сервис CRM.\n"
+          "Чтобы открыть панель мастера, отправьте команду /panel."
+      )
+      attachments = None
+
+  client = MaxClient()
+  try:
+      await client.send_text_to_user(
+          user_id=user_id,
+          text=reply_text,
+          attachments=attachments,
+      )
+  finally:
+      await client.close()
