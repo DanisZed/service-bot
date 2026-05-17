@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import ServiceRequest
 from app.api.deps import get_current_master, get_db
 
-
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
 
@@ -116,22 +115,25 @@ async def get_request(
     return req
 
 
-@router.patch("/api/requests/{request_id}", response_model=ServiceRequestOut)
+@router.patch("/{request_id}", response_model=ServiceRequestOut)
 async def update_service_request(
     request_id: int,
     payload: ServiceRequestUpdate,
-    session: AsyncSession = Depends(get_session),
+    db: AsyncSession = Depends(get_db),
+    current_master=Depends(get_current_master),
 ):
-    result = await session.execute(
+    # Достаём заявку и проверяем владельца
+    result = await db.execute(
         select(ServiceRequest).where(ServiceRequest.id == request_id)
     )
-    obj = result.scalar_one_or_none()
-    if not obj:
+    obj: ServiceRequest | None = result.scalar_one_or_none()
+    if not obj or obj.master_id != current_master.id:
         raise HTTPException(status_code=404, detail="Request not found")
 
     # если пришёл статус canceled — сразу обнуляем total_amount
     if payload.status == "canceled":
         obj.total_amount = 0
+
     # если пришла новая сумма — обновляем
     if payload.total_amount is not None:
         obj.total_amount = payload.total_amount
@@ -145,6 +147,6 @@ async def update_service_request(
     if payload.paid_at is not None:
         obj.paid_at = payload.paid_at
 
-    await session.commit()
-    await session.refresh(obj)
+    await db.commit()
+    await db.refresh(obj)
     return obj
