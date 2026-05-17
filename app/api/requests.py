@@ -75,6 +75,8 @@ class ServiceRequestUpdate(BaseModel):
     payment_status: Optional[str] = None
     paid_amount: Optional[float] = None
     paid_at: Optional[datetime] = None
+    # ДОБАВИТЬ:
+    source: Optional[str] = None
 
 
 @router.get("", response_model=List[ServiceRequestOut])
@@ -146,6 +148,9 @@ async def update_service_request(
         obj.paid_amount = payload.paid_amount
     if payload.paid_at is not None:
         obj.paid_at = payload.paid_at
+        # ДОБАВИТЬ:
+    if payload.source is not None:
+        obj.source = payload.source
 
     await db.commit()
     await db.refresh(obj)
