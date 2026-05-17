@@ -1,3 +1,4 @@
+# app/api/requests.py
 from datetime import datetime, date
 from typing import List, Optional
 
@@ -115,35 +116,35 @@ async def get_request(
     return req
 
 
-@router.patch("/{request_id}", response_model=ServiceRequestOut)
-async def update_request(
+@router.patch("/api/requests/{request_id}", response_model=ServiceRequestOut)
+async def update_service_request(
     request_id: int,
     payload: ServiceRequestUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_master=Depends(get_current_master),
+    session: AsyncSession = Depends(get_session),
 ):
-    req = await db.get(ServiceRequest, request_id)
-    if not req or req.master_id != current_master.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
-        )
+    result = await session.execute(
+        select(ServiceRequest).where(ServiceRequest.id == request_id)
+    )
+    obj = result.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Request not found")
 
-    # Статус и мастер
-    if payload.status is not None:
-        req.status = payload.status
-    if payload.master_id is not None:
-        req.master_id = payload.master_id
-
-    # Финансы
+    # если пришёл статус canceled — сразу обнуляем total_amount
+    if payload.status == "canceled":
+        obj.total_amount = 0
+    # если пришла новая сумма — обновляем
     if payload.total_amount is not None:
-        req.total_amount = payload.total_amount
-    if payload.payment_status is not None:
-        req.payment_status = payload.payment_status
-    if payload.paid_amount is not None:
-        req.paid_amount = payload.paid_amount
-    if payload.paid_at is not None:
-        req.paid_at = payload.paid_at
+        obj.total_amount = payload.total_amount
 
-    await db.commit()
-    await db.refresh(req)
-    return req
+    if payload.status is not None:
+        obj.status = payload.status
+    if payload.payment_status is not None:
+        obj.payment_status = payload.payment_status
+    if payload.paid_amount is not None:
+        obj.paid_amount = payload.paid_amount
+    if payload.paid_at is not None:
+        obj.paid_at = payload.paid_at
+
+    await session.commit()
+    await session.refresh(obj)
+    return obj
