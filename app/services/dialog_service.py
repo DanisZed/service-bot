@@ -373,12 +373,25 @@ class UnifiedDialogService:
             ctx.state = DialogState.CONFIRMED
 
             async with AsyncSessionLocal() as session:
-                # ищем мастера с max_user_id = user_id
+                # 1. Гарантированно получаем мастера по MAX user_id
                 result = await session.execute(
                     select(Master).where(Master.max_user_id == user_id)
                 )
                 master_obj = result.scalar_one_or_none()
-                master_id = master_obj.id if master_obj else None
+
+                if master_obj is None:
+                    # первый раз этот мастер пишет в бота — создаём
+                    master_obj = Master(
+                        max_user_id=user_id,
+                        # можно взять имя из диалога (как к нему обращаться)
+                        name=ctx.name or None,
+                        # если есть ещё поля (телефон мастера, план, и т.п.) — заполни позже
+                    )
+                    session.add(master_obj)
+                    await session.commit()
+                    await session.refresh(master_obj)
+
+                master_id = master_obj.id
 
                 data = {
                     "user_id": user_id,
