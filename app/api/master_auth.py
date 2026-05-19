@@ -1,17 +1,26 @@
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional  # <-- добавили
+from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
+from jwt import InvalidTokenError
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Response,
+    status,
+    Query,
+    Cookie,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.db.models import Master
-from max_client import MaxClient
+from max_client import MaxClient  # пока не используем, но пусть будет
 
 import logging
 
@@ -47,6 +56,28 @@ class TokenOut(BaseModel):
 class RequestCodeByMaxOut(BaseModel):
     code: str
     login_url: str
+
+
+class MasterMeOut(BaseModel):
+    master_id: int
+    name: Optional[str] = None
+    plan: Optional[str] = None
+
+
+def _decode_master_id_from_token(token: str) -> int:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if payload.get("role") != "master":
+        raise HTTPException(status_code=403, detail="Invalid role")
+
+    sub = payload.get("sub")
+    try:
+        return int(sub)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token payload")
 
 
 @router.post("/request-code-by-max", response_model=RequestCodeByMaxOut)
@@ -89,7 +120,7 @@ async def request_login_code_by_max(
     master.login_code_expires_at = expires_at
     await db.commit()
 
-    # актуальный URL панели из env, по умолчанию — твой новый домен
+    # актуальный URL панели из env, по умолчанию — боевой домен
     frontend_base = os.getenv("FRONTEND_BASE_URL", "https://panel.master-rbt-crm.ru")
     login_url = f"{frontend_base}/login?code={code}"
 
@@ -154,6 +185,34 @@ async def verify_login_code(
         token_type="bearer",
         master_id=master.id,
         name=master.name or "",
+    )
+
+
+@router.get("/me", response_model=MasterMeOut)
+async def get_current_master(
+    access_token: Optional[str] = Cookie(
+        default=None, alias=ACCESS_TOKEN_COOKIE_NAME
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Возвращает данные текущего мастера по JWT в куке.
+    Если токена нет/он невалиден — 401 (гостевой режим на фронте).
+    """
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    master_id = _decode_master_id_from_token(access_token)
+
+    result = await db.execute(select(Master).where(Master.id == master_id))
+    master = result.scalars().first()
+    if not master or not master.is_active:
+        raise HTTPException(status_code=401, detail="Master not found or inactive")
+
+    return MasterMeOut(
+        master_id=master.id,
+        name=master.name,
+        plan=master.plan,
     )
 
 
