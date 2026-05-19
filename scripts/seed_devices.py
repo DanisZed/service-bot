@@ -1,4 +1,7 @@
 # scripts/seed_devices.py
+# перед первым запуском выполнить посев в БД:
+# cd /home/servicebot/service-bot
+# PYTHONPATH=. python scripts/seed_devices.py
 import asyncio
 
 from app.db.session import AsyncSessionLocal

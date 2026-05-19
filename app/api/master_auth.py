@@ -1,7 +1,7 @@
-# app/api/master_auth.py
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Optional  # <-- добавили
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
@@ -41,59 +41,12 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     master_id: int
-    name: str
+    name: Optional[str] = None
 
-
-@router.post("/request-code")
-async def request_login_code(
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Отправляет мастеру код входа в веб-панель через второго MAX-бота.
-    Пока берём первого активного мастера — потом можно фильтровать по телефону/логину.
-    """
-    result = await db.execute(select(Master).where(Master.is_active == 1))
-    master = result.scalars().first()
-    if not master or not master.max_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Master with max_user_id not configured",
-        )
-
-    code = f"{secrets.randbelow(999999):06d}"  # 6-значный код
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
-
-    master.login_code = code
-    master.login_code_expires_at = expires_at
-    await db.commit()
-
-    if not MAX_SECOND_BOT_TOKEN:
-        logger.error("MAX_SECOND_BOT_TOKEN is not set")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Second bot token not configured",
-        )
-
-    text = (
-        f"Код для входа в панель мастера: {code}\n"
-        "Никому его не сообщайте. Действует 10 минут."
-    )
-
-    client = MaxClient(token=MAX_SECOND_BOT_TOKEN)
-    try:
-        await client.send_text_to_user(
-            user_id=master.max_user_id,
-            text=text,
-            attachments=None,
-        )
-    finally:
-        await client.close()
-
-    return {"ok": True}
 
 class RequestCodeByMaxOut(BaseModel):
-  code: str
-  login_url: str
+    code: str
+    login_url: str
 
 
 @router.post("/request-code-by-max", response_model=RequestCodeByMaxOut)
@@ -136,11 +89,12 @@ async def request_login_code_by_max(
     master.login_code_expires_at = expires_at
     await db.commit()
 
-    # dev-URL панели, можно вынести в конфиг
-    frontend_base = os.getenv("FRONTEND_BASE_URL", "http://192.168.2.122:5173")
+    # актуальный URL панели из env, по умолчанию — твой новый домен
+    frontend_base = os.getenv("FRONTEND_BASE_URL", "https://panel.master-rbt-crm.ru")
     login_url = f"{frontend_base}/login?code={code}"
 
     return RequestCodeByMaxOut(code=code, login_url=login_url)
+
 
 @router.post("/verify-code", response_model=TokenOut)
 async def verify_login_code(
@@ -199,7 +153,7 @@ async def verify_login_code(
         access_token=access_token,
         token_type="bearer",
         master_id=master.id,
-        name=master.name,
+        name=master.name or "",
     )
 
 
