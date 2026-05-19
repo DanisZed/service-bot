@@ -6,7 +6,7 @@ ACCESS_TOKEN = "f9LHodD0cOJ-w1SxNh6DvVYwGrJbfhmqPq0biXFVWO5XtzC11k02pcl_qhAIIu9h
 async def main():
     url = "https://platform-api.max.ru/subscriptions"
     payload = {
-        "url": "https://master-rbt-crm.ru/max/webhook",
+        "url": "https://panel.master-rbt-crm.ru/max/webhook",
         "update_types": ["message_created", "message_callback", "bot_started"],
         "secret": "danis_super_secret_key_1",
     }
