@@ -7,6 +7,8 @@ from fastapi import APIRouter, Request, BackgroundTasks
 from max_client import MaxClient
 from app.services.dialog_service import dialog_service
 from app.services.max_commands import handle_command  # обработка /panel и др.
+from app.db.models import Master
+from sqlalchemy import select
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -129,41 +131,94 @@ async def max_webhook(
 # app/api/max_webhook.py
 
 async def handle_bot_started(event: Dict[str, Any]) -> None:
-  user = event.get("user") or {}
-  user_id = user.get("user_id")
-  payload = event.get("payload")
+    user = event.get("user") or {}
+    user_id = user.get("user_id")
+    payload = event.get("payload")
 
-  logger.info(
-      "MAX BOT_STARTED: user_id=%s payload=%r event=%r",
-      user_id,
-      payload,
-      event,
-  )
+    logger.info(
+        "MAX BOT_STARTED: user_id=%s payload=%r event=%r",
+        user_id,
+        payload,
+        event,
+    )
 
-  if not user_id:
-      logger.warning("bot_started without user_id: %s", event)
-      return
+    if not user_id:
+        logger.warning("bot_started without user_id: %s", event)
+        return
 
-  reply_text = None
-  attachments = None
+    reply_text = None
+    attachments = None
 
-  # если диплинк ...?start=panel — ведём себя как /panel
-  if isinstance(payload, str) and payload.strip().lower() == "panel":
-      reply_text, attachments = await handle_command(user_id, "/panel")
-  else:
-      # обычное приветствие без panel
-      reply_text = (
-          "Привет! Я бот Техник Сервис CRM.\n"
-          "Чтобы открыть панель мастера, отправьте команду /panel."
-      )
-      attachments = None
+    # ========== ОБРАБОТКА ЗАВЕРШЕНИЯ РЕГИСТРАЦИИ ==========
+    if isinstance(payload, str) and payload.startswith("complete_"):
+        master_id = payload.replace("complete_", "")
+        
+        # Проверяем, что мастер активирован
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.master_id == master_id, Master.is_active == 1)
+            )
+            master = result.scalar_one_or_none()
+        
+        if not master:
+            reply_text = "❌ Ошибка: регистрация не завершена. Попробуйте снова."
+            attachments = None
+        else:
+            # Формируем сообщение об успешной регистрации с кнопкой "Новая заявка"
+            kb = [{
+                "type": "inline_keyboard",
+                "payload": {
+                    "buttons": [[{
+                        "type": "callback",
+                        "text": "📝 Новая заявка",
+                        "payload": "menu:new_request",
+                        "intent": "default",
+                    }]]
+                }
+            }]
+            
+            role_text = "Администратор" if master.is_admin else "Мастер"
+            name_text = master.name or master.service_name or ""
+            
+            reply_text = (
+                f"🎉 **Регистрация успешно завершена!**\n\n"
+                f"👤 Роль: {role_text}\n"
+                f"📛 {name_text}\n"
+                f"🆔 ID мастера: `{master.master_id}`\n\n"
+                f"Теперь вы можете создавать заявки.\n\n"
+                f"Нажмите «Новая заявка», чтобы начать."
+            )
+            attachments = kb
+        
+        # Отправляем сообщение пользователю
+        client = MaxClient()
+        try:
+            await client.send_text_to_user(
+                user_id=user_id,
+                text=reply_text,
+                attachments=attachments,
+            )
+        finally:
+            await client.close()
+        return
 
-  client = MaxClient()
-  try:
-      await client.send_text_to_user(
-          user_id=user_id,
-          text=reply_text,
-          attachments=attachments,
-      )
-  finally:
-      await client.close()
+    # ========== ОБРАБОТКА ПАНЕЛИ ==========
+    if isinstance(payload, str) and payload.strip().lower() == "panel":
+        reply_text, attachments = await handle_command(user_id, "/panel")
+    else:
+        # обычное приветствие без panel
+        reply_text = (
+            "Авторизация в системе РБТ | CRM.\n"
+            "Чтобы открыть панель мастера, отправьте команду /panel."
+        )
+        attachments = None
+
+    client = MaxClient()
+    try:
+        await client.send_text_to_user(
+            user_id=user_id,
+            text=reply_text,
+            attachments=attachments,
+        )
+    finally:
+        await client.close()
