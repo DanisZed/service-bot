@@ -158,49 +158,49 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
 
     # ========== ОБРАБОТКА ЗАВЕРШЕНИЯ РЕГИСТРАЦИИ ==========
     if isinstance(payload, str) and payload.startswith("complete-"):
-    master_id = payload.replace("complete-", "")
-    
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Master).where(Master.master_id == master_id, Master.is_active == 1)
-        )
-        master = result.scalar_one_or_none()
-    
-    if master:
-        kb = [{
-            "type": "inline_keyboard",
-            "payload": {
-                "buttons": [[{
-                    "type": "callback",
-                    "text": "📝 Новая заявка",
-                    "payload": "menu:new_request",
-                    "intent": "default",
-                }]]
-            }
-        }]
+        master_id = payload.replace("complete-", "")
         
-        role_text = "Администратор" if master.is_admin else "Мастер"
-        name_text = master.name or master.service_name or ""
-        
-        reply_text = (
-            f"🎉 **Регистрация успешно завершена!**\n\n"
-            f"👤 Роль: {role_text}\n"
-            f"📛 {name_text}\n"
-            f"🆔 ID мастера: `{master.master_id}`\n\n"
-            f"Теперь вы можете создавать заявки.\n\n"
-            f"Нажмите «Новая заявка», чтобы начать."
-        )
-        
-        client = MaxClient()
-        try:
-            await client.send_text_to_user(
-                user_id=user_id,
-                text=reply_text,
-                attachments=kb,
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.master_id == master_id, Master.is_active == 1)
             )
-        finally:
-            await client.close()
-        return
+            master = result.scalar_one_or_none()
+        
+        if master:
+            kb = [{
+                "type": "inline_keyboard",
+                "payload": {
+                    "buttons": [[{
+                        "type": "callback",
+                        "text": "📝 Новая заявка",
+                        "payload": "menu:new_request",
+                        "intent": "default",
+                    }]]
+                }
+            }]
+            
+            role_text = "Администратор" if master.is_admin else "Мастер"
+            name_text = master.name or master.service_name or ""
+            
+            reply_text = (
+                f"🎉 **Регистрация успешно завершена!**\n\n"
+                f"👤 Роль: {role_text}\n"
+                f"📛 {name_text}\n"
+                f"🆔 ID мастера: `{master.master_id}`\n\n"
+                f"Теперь вы можете создавать заявки.\n\n"
+                f"Нажмите «Новая заявка», чтобы начать."
+            )
+            
+            client = MaxClient()
+            try:
+                await client.send_text_to_user(
+                    user_id=user_id,
+                    text=reply_text,
+                    attachments=kb,
+                )
+            finally:
+                await client.close()
+            return
 
     # ========== ОБРАБОТКА ПАНЕЛИ ==========
     if isinstance(payload, str) and payload.strip().lower() == "panel":
