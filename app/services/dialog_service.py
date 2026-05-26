@@ -160,6 +160,17 @@ class UnifiedDialogService:
     async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Начинает новый диалог или сбрасывает текущий (для webhook)"""
         self.reset(user_id)
+            # ===== ДОБАВЬ ЭТУ ПРОВЕРКУ =====
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id)
+            )
+            master = result.scalar_one_or_none()
+        
+        if not master or master.is_active == 0:
+            return await registration_service.start_registration(user_id)
+        # ===============================
+
         return await registration_service.start_registration(user_id)
 
     # ========== ОСТАЛЬНЫЕ МЕТОДЫ ==========
@@ -449,16 +460,16 @@ class UnifiedDialogService:
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка текстовых сообщений"""
         
-        # Проверяем, зарегистрирован ли пользователь
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
-            )
-            master = result.scalar_one_or_none()
-        
-        if not master:
-            # Отправляем на регистрацию
-            return await registration_service.start_registration(user_id)
+    # ===== ДОБАВЬ ЭТУ ПРОВЕРКУ =====
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Master).where(Master.max_user_id == user_id)
+        )
+        master = result.scalar_one_or_none()
+    
+    if not master or master.is_active == 0:
+        # Пользователь не зарегистрирован — отправляем на регистрацию
+        return await registration_service.start_registration(user_id)
         
         ctx = self._get_ctx(user_id)
         text_clean = text.strip()
