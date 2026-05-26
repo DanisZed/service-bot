@@ -40,9 +40,12 @@ def normalize_phone(raw: str) -> Optional[str]:
 class RegistrationState:
     """Состояния регистрации"""
     CHOOSE_ROLE = "choose_role"
+    # Администратор
     ADMIN_SERVICE_NAME = "admin_service_name"
+    ADMIN_NAME = "admin_name"
     ADMIN_LASTNAME = "admin_lastname"
     ADMIN_PHONE = "admin_phone"
+    # Мастер
     MASTER_NAME = "master_name"
     MASTER_LASTNAME = "master_lastname"
     MASTER_PHONE = "master_phone"
@@ -53,8 +56,12 @@ class RegistrationContext:
     """Контекст регистрации пользователя"""
     state: str = RegistrationState.CHOOSE_ROLE
     role: Optional[str] = None
+    # Для админа
     service_name: Optional[str] = None
+    admin_name: Optional[str] = None
+    # Для мастера
     master_name: Optional[str] = None
+    # Общие
     lastname: Optional[str] = None
     phone: Optional[str] = None
     generated_master_id: Optional[str] = None
@@ -130,18 +137,21 @@ class RegistrationService:
         
         if ctx.role == "admin":
             if ctx.state == RegistrationState.ADMIN_SERVICE_NAME and ctx.service_name:
+                ctx.state = RegistrationState.ADMIN_NAME
+                return "Отлично! Теперь введите ваше имя:", None
+            elif ctx.state == RegistrationState.ADMIN_NAME and ctx.admin_name:
                 ctx.state = RegistrationState.ADMIN_LASTNAME
-                return "Отлично! Теперь введите вашу фамилию:", None
+                return "Хорошо! Теперь введите вашу фамилию:", None
             elif ctx.state == RegistrationState.ADMIN_LASTNAME and ctx.lastname:
                 ctx.state = RegistrationState.ADMIN_PHONE
-                return "Хорошо! Теперь введите ваш номер телефона:", None
+                return "Теперь введите ваш номер телефона:\nФормат: +7XXXXXXXXXX или 8XXXXXXXXXX", None
         elif ctx.role == "master":
             if ctx.state == RegistrationState.MASTER_NAME and ctx.master_name:
                 ctx.state = RegistrationState.MASTER_LASTNAME
                 return "Теперь введите вашу фамилию:", None
             elif ctx.state == RegistrationState.MASTER_LASTNAME and ctx.lastname:
                 ctx.state = RegistrationState.MASTER_PHONE
-                return "Теперь введите ваш номер телефона:", None
+                return "Теперь введите ваш номер телефона:\nФормат: +7XXXXXXXXXX или 8XXXXXXXXXX", None
         
         # Если не можем продолжить — начинаем заново с выбором роли
         ctx.state = RegistrationState.CHOOSE_ROLE
@@ -194,16 +204,21 @@ class RegistrationService:
             self.reset(user_id)
             return "❌ Регистрация отменена. Чтобы начать заново, напишите /start", None
         
-        # АДМИН
+        # АДМИНИСТРАТОР
         if ctx.state == RegistrationState.ADMIN_SERVICE_NAME:
             ctx.service_name = text_clean
+            ctx.state = RegistrationState.ADMIN_NAME
+            return "Отлично! Теперь введите ваше имя:", None
+        
+        if ctx.state == RegistrationState.ADMIN_NAME:
+            ctx.admin_name = text_clean
             ctx.state = RegistrationState.ADMIN_LASTNAME
-            return "Отлично! Теперь введите вашу фамилию:", None
+            return "Хорошо! Теперь введите вашу фамилию:", None
         
         if ctx.state == RegistrationState.ADMIN_LASTNAME:
             ctx.lastname = text_clean
             ctx.state = RegistrationState.ADMIN_PHONE
-            return "Хорошо! Теперь введите ваш номер телефона:\nФормат: +7XXXXXXXXXX или 8XXXXXXXXXX", None
+            return "Теперь введите ваш номер телефона:\nФормат: +7XXXXXXXXXX или 8XXXXXXXXXX", None
         
         if ctx.state == RegistrationState.ADMIN_PHONE:
             phone = normalize_phone(text_clean)
@@ -247,7 +262,7 @@ class RegistrationService:
             if existing:
                 master = existing
                 master.master_id = ctx.generated_master_id
-                master.name = ctx.master_name if ctx.role == "master" else None
+                master.name = ctx.master_name if ctx.role == "master" else ctx.admin_name
                 master.lastname = ctx.lastname
                 master.service_name = ctx.service_name if ctx.role == "admin" else None
                 master.phone = ctx.phone
@@ -257,7 +272,7 @@ class RegistrationService:
                 master = Master(
                     master_id=ctx.generated_master_id,
                     max_user_id=real_max_user_id,
-                    name=ctx.master_name if ctx.role == "master" else None,
+                    name=ctx.master_name if ctx.role == "master" else ctx.admin_name,
                     lastname=ctx.lastname,
                     service_name=ctx.service_name if ctx.role == "admin" else None,
                     phone=ctx.phone,
@@ -271,8 +286,8 @@ class RegistrationService:
             
             await session.commit()
         
-        second_bot_link = os.getenv("MAX_ORDER_BOT_LINK", "https://max.ru/id027308840424_1_bot")
-        activate_link = f"{second_bot_link}?start=activate_{ctx.generated_master_id}"
+        order_bot_link = os.getenv("MAX_ORDER_BOT_LINK", "https://max.ru/id027308840424_1_bot")
+        activate_link = f"{order_bot_link}?start=activate_{ctx.generated_master_id}"
         
         kb = self._inline_keyboard([[
             {
@@ -286,6 +301,7 @@ class RegistrationService:
             text = (
                 f"📝 Регистрация Администратора создана!\n\n"
                 f"🏢 Сервис: {ctx.service_name}\n"
+                f"👤 Имя: {ctx.admin_name}\n"
                 f"👤 Фамилия: {ctx.lastname}\n"
                 f"🆔 ID мастера: `{ctx.generated_master_id}`\n"
                 f"🆔 ID сервиса: `{ctx.generated_service_id}`\n"

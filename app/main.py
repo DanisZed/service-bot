@@ -11,6 +11,7 @@ from app.api.me import router as me_router
 from app.api.requests import router as requests_router
 from app.api.master_auth import router as master_auth_router
 from app.api.max_webhook import router as max_webhook_router
+from app.api.order_webhook import router as order_webhook_router
 
 # Загружаем .env
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -46,3 +47,4 @@ app.include_router(me_router)
 app.include_router(requests_router)
 app.include_router(master_auth_router)
 app.include_router(max_webhook_router)
+app.include_router(order_webhook_router)

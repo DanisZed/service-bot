@@ -1,3 +1,4 @@
+# max_client.py
 import os
 import logging
 from pathlib import Path
@@ -203,3 +204,11 @@ class MaxClient:
 
     async def close(self) -> None:
         await self.client.aclose()
+class MaxOrderBotClient(MaxClient):
+    """Клиент для order_bot (бот для активации и получения заявок)"""
+    
+    def __init__(self, token: Optional[str] = None, **kwargs):
+        order_token = token or os.getenv("MAX_ORDER_BOT_TOKEN")
+        if not order_token:
+            raise ValueError("MAX_ORDER_BOT_TOKEN is not set")
+        super().__init__(token=order_token, **kwargs)        

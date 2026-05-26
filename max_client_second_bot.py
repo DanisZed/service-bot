@@ -1,3 +1,4 @@
+# max_client_second_bot.py
 import os
 
 from max_client import MaxClient
