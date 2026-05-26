@@ -36,7 +36,7 @@ async def activate_master(master_id: str, user_id: int) -> Tuple[str, Optional[L
         
         # Ссылка на первого бота с параметром complete_
         dispatcher_bot_link = os.getenv("MAX_DISPATCHER_BOT_LINK", "https://max.ru/id027308840424_bot")
-        complete_link = f"{dispatcher_bot_link}?start=complete_{master.master_id}"
+        complete_link = f"{dispatcher_bot_link}?start=complete-{master.master_id}"
         print(f"🔗 Ссылка для завершения регистрации: {complete_link}")  # добавить лог
         
         kb = [{
