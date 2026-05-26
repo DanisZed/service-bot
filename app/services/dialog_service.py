@@ -13,7 +13,7 @@ from app.db.session import AsyncSessionLocal
 from app.services.requests import create_service_request
 from app.services.devices import list_categories, list_subtypes_by_category
 from app.services.masters_notify import notify_master_request_created
-from app.services.registration_service import registration_service
+from app.services.registration_service import registration_service, generate_master_id
 
 from app.db.models import Master
 
@@ -157,8 +157,35 @@ class UnifiedDialogService:
         kb = self._inline_keyboard(rows)
         return "Выберите категорию техники:", kb
     
-    # ========== ОСТАЛЬНЫЕ МЕТОДЫ (без изменений) ==========
-    
+    async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
+        """Начинает новый диалог или сбрасывает текущий (для webhook)"""
+        self.reset(user_id)
+        
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id)
+            )
+            master = result.scalar_one_or_none()
+            
+            if not master:
+                master = Master(
+                    master_id=generate_master_id(),
+                    max_user_id=user_id,
+                    plan="free",
+                    is_active=0,
+                    is_admin=0,
+                    created_at=datetime.now(),
+                )
+                session.add(master)
+                await session.commit()
+                return await registration_service.start_registration(user_id)
+            
+            if master.is_active == 0:
+                return await registration_service.start_registration(user_id)
+        
+        return await self.show_main_menu(user_id)
+
+    # ========== ОСТАЛЬНЫЕ МЕТОДЫ ==========
     
     def _buttons_address_mode(self) -> List[dict]:
         return self._inline_keyboard(
@@ -443,8 +470,8 @@ class UnifiedDialogService:
         )
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
-            """Обработка текстовых сообщений"""
-    
+        """Обработка текстовых сообщений"""
+        
         # Проверяем, существует ли мастер в БД
         async with AsyncSessionLocal() as session:
             result = await session.execute(
@@ -452,9 +479,7 @@ class UnifiedDialogService:
             )
             master = result.scalar_one_or_none()
             
-            # Если мастера нет — создаём автоматически
             if not master:
-                from app.services.registration_service import generate_master_id
                 master = Master(
                     master_id=generate_master_id(),
                     max_user_id=user_id,
@@ -465,14 +490,11 @@ class UnifiedDialogService:
                 )
                 session.add(master)
                 await session.commit()
-                # Отправляем на регистрацию для заполнения данных
                 return await registration_service.start_registration(user_id)
             
-            # Если мастер есть, но не активен — отправляем на регистрацию
             if master.is_active == 0:
                 return await registration_service.start_registration(user_id)
         
-        # Если мастер активен — продолжаем обычный диалог
         ctx = self._get_ctx(user_id)
         text_clean = text.strip()
         text_lower = text_clean.lower()
@@ -546,7 +568,6 @@ class UnifiedDialogService:
             ctx.state = DialogState.CONFIRMED
 
             async with AsyncSessionLocal() as session:
-                # Получаем мастера
                 result = await session.execute(
                     select(Master).where(Master.max_user_id == user_id)
                 )
@@ -586,17 +607,13 @@ class UnifiedDialogService:
 
             ctx.request_id = req.id
 
-            # Отправляем в общий канал заявок
             await self._send_application_to_channel(user_id, ctx)
-
-            # Отправляем мастеру
             await notify_master_request_created(req.id)
 
             reply = f"✅ Спасибо, заявка №{req.id} создана! Мастер скоро свяжется с вами."
             self.reset(user_id)
             return reply, None
 
-        # Если текст прилетел в неизвестном состоянии — показываем главное меню
         return await self.show_main_menu(user_id)
 
     async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
@@ -682,14 +699,5 @@ class UnifiedDialogService:
         )
         await client.close()
 
-    async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
-        """Начинает новый диалог или сбрасывает текущий (для webhook)"""
-        self.reset(user_id)
-        is_active = await registration_service.is_user_active(user_id)
-        
-        if not is_active:
-            return await registration_service.start_registration(user_id)
-        
-        return await self.show_main_menu(user_id)
 
 dialog_service = UnifiedDialogService()
