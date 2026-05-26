@@ -367,9 +367,7 @@ class UnifiedDialogService:
 
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка callback-запросов"""
-        
-            """Обработка callback-запросов"""
-    
+            
         # Убеждаемся, что пользователь существует
         await self.ensure_user_exists(user_id)
         # Кнопка "Новая заявка" из главного меню
