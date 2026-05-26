@@ -40,11 +40,9 @@ def normalize_phone(raw: str) -> Optional[str]:
 class RegistrationState:
     """Состояния регистрации"""
     CHOOSE_ROLE = "choose_role"
-    # Для админа
     ADMIN_SERVICE_NAME = "admin_service_name"
     ADMIN_LASTNAME = "admin_lastname"
     ADMIN_PHONE = "admin_phone"
-    # Для мастера
     MASTER_NAME = "master_name"
     MASTER_LASTNAME = "master_lastname"
     MASTER_PHONE = "master_phone"
@@ -55,11 +53,8 @@ class RegistrationContext:
     """Контекст регистрации пользователя"""
     state: str = RegistrationState.CHOOSE_ROLE
     role: Optional[str] = None
-    # Для админа
     service_name: Optional[str] = None
-    # Для мастера
     master_name: Optional[str] = None
-    # Общие поля
     lastname: Optional[str] = None
     phone: Optional[str] = None
     generated_master_id: Optional[str] = None
@@ -74,10 +69,14 @@ class RegistrationService:
     
     def _get_ctx(self, user_id: int) -> RegistrationContext:
         if user_id not in self._sessions:
+            print(f"🆕 Новый контекст регистрации для user_id={user_id}")
             self._sessions[user_id] = RegistrationContext()
+        else:
+            print(f"📌 Существующий контекст для user_id={user_id}, state={self._sessions[user_id].state}")
         return self._sessions[user_id]
     
     def reset(self, user_id: int) -> None:
+        print(f"🗑️ Сброс контекста регистрации для user_id={user_id}")
         self._sessions.pop(user_id, None)
     
     def _inline_keyboard(self, rows: List[List[dict]]) -> List[dict]:
@@ -86,36 +85,18 @@ class RegistrationService:
             "payload": {"buttons": rows},
         }]
     
-    async def is_user_active(self, user_id: int) -> bool:
-        """Проверяет, активен ли пользователь (is_active=1)"""
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(
-                    Master.max_user_id == user_id,
-                    Master.is_active == 1
-                )
-            )
-            master = result.scalar_one_or_none()
-            return master is not None
-    
-    async def activate_user(self, user_id: int, master_id: str) -> bool:
-        """Активирует пользователя по master_id (вызывается из второго бота)"""
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(Master.master_id == master_id)
-            )
-            master = result.scalar_one_or_none()
-            
-            if master:
-                master.is_active = 1
-                await session.commit()
-                return True
-            return False
-    
     async def start_registration(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
-        """Начало регистрации — приветствие и кнопка"""
-        self.reset(user_id)
+        """Начало регистрации — показываем кнопку начала (НЕ сбрасываем контекст!)"""
         
+        # НЕ СБРАСЫВАЕМ КОНТЕКСТ ЗДЕСЬ!
+        ctx = self._get_ctx(user_id)
+        
+        # Если уже есть активная регистрация — продолжаем её
+        if ctx.state != RegistrationState.CHOOSE_ROLE:
+            # Продолжаем с текущего состояния
+            return await self._continue_registration(user_id)
+        
+        # Иначе показываем кнопку начала
         kb = self._inline_keyboard([[
             {
                 "type": "callback",
@@ -136,9 +117,34 @@ class RegistrationService:
         
         return welcome_text, kb
     
+    async def _continue_registration(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
+        """Продолжает регистрацию с текущего состояния"""
+        ctx = self._get_ctx(user_id)
+        
+        if ctx.role == "admin":
+            if ctx.state == RegistrationState.ADMIN_SERVICE_NAME and ctx.service_name:
+                ctx.state = RegistrationState.ADMIN_LASTNAME
+                return "Отлично! Теперь введите вашу фамилию:", None
+            elif ctx.state == RegistrationState.ADMIN_LASTNAME and ctx.lastname:
+                ctx.state = RegistrationState.ADMIN_PHONE
+                return "Хорошо! Теперь введите ваш номер телефона:", None
+        elif ctx.role == "master":
+            if ctx.state == RegistrationState.MASTER_NAME and ctx.master_name:
+                ctx.state = RegistrationState.MASTER_LASTNAME
+                return "Теперь введите вашу фамилию:", None
+            elif ctx.state == RegistrationState.MASTER_LASTNAME and ctx.lastname:
+                ctx.state = RegistrationState.MASTER_PHONE
+                return "Теперь введите ваш номер телефона:", None
+        
+        # Если не можем продолжить — начинаем заново с выбором роли
+        ctx.state = RegistrationState.CHOOSE_ROLE
+        return self._show_role_choice()
+    
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка callback-запросов"""
         ctx = self._get_ctx(user_id)
+        
+        print(f"🔔 registration callback: user_id={user_id}, payload={payload}, state={ctx.state}")
         
         if payload == "registration:start":
             ctx.state = RegistrationState.CHOOSE_ROLE
@@ -175,87 +181,63 @@ class RegistrationService:
         ctx = self._get_ctx(user_id)
         text_clean = text.strip()
         
+        print(f"🔔 registration message: user_id={user_id}, state={ctx.state}, text={text_clean}")
+        
         if text_clean.lower() in ("/cancel", "отмена", "стоп"):
             self.reset(user_id)
             return "❌ Регистрация отменена. Чтобы начать заново, напишите /start", None
         
-        # ========== АДМИН ==========
+        # АДМИН
         if ctx.state == RegistrationState.ADMIN_SERVICE_NAME:
             ctx.service_name = text_clean
             ctx.state = RegistrationState.ADMIN_LASTNAME
-            return (
-                "Отлично! Теперь введите вашу фамилию:",
-                None
-            )
+            return "Отлично! Теперь введите вашу фамилию:", None
         
         if ctx.state == RegistrationState.ADMIN_LASTNAME:
             ctx.lastname = text_clean
             ctx.state = RegistrationState.ADMIN_PHONE
-            return (
-                "Хорошо! Теперь введите ваш номер телефона для связи\n"
-                "Формат: +7XXXXXXXXXX или 8XXXXXXXXXX",
-                None
-            )
+            return "Хорошо! Теперь введите ваш номер телефона:\nФормат: +7XXXXXXXXXX или 8XXXXXXXXXX", None
         
         if ctx.state == RegistrationState.ADMIN_PHONE:
             phone = normalize_phone(text_clean)
             if not phone:
-                return (
-                    "❌ Неверный формат номера.\n"
-                    "Пожалуйста, введите номер в формате +7XXXXXXXXXX или 8XXXXXXXXXX",
-                    None
-                )
+                return "❌ Неверный формат номера. Введите номер в формате +7XXXXXXXXXX или 8XXXXXXXXXX", None
             ctx.phone = phone
             return await self._complete_registration(user_id, ctx)
         
-        # ========== МАСТЕР ==========
+        # МАСТЕР
         if ctx.state == RegistrationState.MASTER_NAME:
             ctx.master_name = text_clean
             ctx.state = RegistrationState.MASTER_LASTNAME
-            return (
-                f"Приятно познакомиться, {ctx.master_name}!\n\n"
-                f"Теперь введите вашу фамилию:",
-                None
-            )
+            return f"Приятно познакомиться, {ctx.master_name}!\n\nТеперь введите вашу фамилию:", None
         
         if ctx.state == RegistrationState.MASTER_LASTNAME:
             ctx.lastname = text_clean
             ctx.state = RegistrationState.MASTER_PHONE
-            return (
-                f"Спасибо, {ctx.master_name} {ctx.lastname}!\n\n"
-                f"Теперь введите ваш номер телефона для связи\n"
-                f"Формат: +7XXXXXXXXXX или 8XXXXXXXXXX",
-                None
-            )
+            return f"Спасибо, {ctx.master_name} {ctx.lastname}!\n\nТеперь введите ваш номер телефона:\nФормат: +7XXXXXXXXXX или 8XXXXXXXXXX", None
         
         if ctx.state == RegistrationState.MASTER_PHONE:
             phone = normalize_phone(text_clean)
             if not phone:
-                return (
-                    "❌ Неверный формат номера.\n"
-                    "Пожалуйста, введите номер в формате +7XXXXXXXXXX или 8XXXXXXXXXX",
-                    None
-                )
+                return "❌ Неверный формат номера. Введите номер в формате +7XXXXXXXXXX или 8XXXXXXXXXX", None
             ctx.phone = phone
             return await self._complete_registration(user_id, ctx)
         
+        # Если состояние не определено — показываем кнопку начала
         return await self.start_registration(user_id)
     
     async def _complete_registration(self, user_id: int, ctx: RegistrationContext) -> Tuple[str, Optional[List[dict]]]:
         """Сохраняет в БД (is_active=0) и показывает кнопку для перехода во второй бот"""
         
         async with AsyncSessionLocal() as session:
-            # Используем реальный user_id из Max
             real_max_user_id = user_id
             
-            # Проверяем, не существует ли уже такой max_user_id
             result = await session.execute(
                 select(Master).where(Master.max_user_id == real_max_user_id)
             )
             existing = result.scalar_one_or_none()
             
             if existing:
-                # Обновляем существующего мастера
                 master = existing
                 master.master_id = ctx.generated_master_id
                 master.name = ctx.master_name if ctx.role == "master" else None
@@ -264,12 +246,10 @@ class RegistrationService:
                 master.phone = ctx.phone
                 master.is_active = 0
                 master.is_admin = 1 if ctx.role == "admin" else 0
-                master.updated_at = datetime.now()  # если есть такое поле
             else:
-                # Создаем нового мастера
                 master = Master(
                     master_id=ctx.generated_master_id,
-                    max_user_id=real_max_user_id,  # Реальный ID из Max!
+                    max_user_id=real_max_user_id,
                     name=ctx.master_name if ctx.role == "master" else None,
                     lastname=ctx.lastname,
                     service_name=ctx.service_name if ctx.role == "admin" else None,
@@ -284,7 +264,6 @@ class RegistrationService:
             
             await session.commit()
         
-        # Получаем ссылку на второго бота из .env
         second_bot_link = os.getenv("MAX_ORDER_BOT_LINK", "https://max.ru/id027308840424_1_bot")
         activate_link = f"{second_bot_link}?start=activate_{ctx.generated_master_id}"
         
@@ -304,8 +283,7 @@ class RegistrationService:
                 f"🆔 ID мастера: `{ctx.generated_master_id}`\n"
                 f"🆔 ID сервиса: `{ctx.generated_service_id}`\n"
                 f"📞 Телефон: {ctx.phone}\n\n"
-                f"⚠️ **Для активации нажмите кнопку «Активировать бота»**\n\n"
-                f"Вы перейдете во второй бот, где завершите регистрацию."
+                f"⚠️ **Для активации нажмите кнопку «Активировать бота»**"
             )
         else:
             text = (
@@ -314,10 +292,10 @@ class RegistrationService:
                 f"👤 Фамилия: {ctx.lastname}\n"
                 f"🆔 ID мастера: `{ctx.generated_master_id}`\n"
                 f"📞 Телефон: {ctx.phone}\n\n"
-                f"⚠️ **Для активации нажмите кнопку «Активировать бота»**\n\n"
-                f"Вы перейдете во второй бот, где завершите регистрацию."
+                f"⚠️ **Для активации нажмите кнопку «Активировать бота»**"
             )
         
+        self.reset(user_id)
         return text, kb
     
     def _show_role_choice(self) -> Tuple[str, List[dict]]:
@@ -351,5 +329,4 @@ class RegistrationService:
         return text, kb
 
 
-# Синглтон
 registration_service = RegistrationService()
