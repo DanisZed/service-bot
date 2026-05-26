@@ -135,6 +135,11 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
     user_id = user.get("user_id")
     payload = event.get("payload")
 
+        # ЛОГИРУЕМ ВСЁ, ЧТО ПРИШЛО
+    print(f"\n🔔 BOT_STARTED ПОЛНЫЙ EVENT: {event}")
+    print(f"🔔 payload: {payload}")
+    print(f"🔔 user: {user}")
+    
     logger.info(
         "MAX BOT_STARTED: user_id=%s payload=%r event=%r",
         user_id,
