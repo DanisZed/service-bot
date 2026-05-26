@@ -159,6 +159,7 @@ class UnifiedDialogService:
     
     # ========== ОСТАЛЬНЫЕ МЕТОДЫ (без изменений) ==========
     
+    
     def _buttons_address_mode(self) -> List[dict]:
         return self._inline_keyboard(
             [[
@@ -659,6 +660,14 @@ class UnifiedDialogService:
             attachments=attachments,
         )
         await client.close()
-
+        async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
+            """Начинает новый диалог или сбрасывает текущий (для webhook)"""
+            self.reset(user_id)
+            is_active = await registration_service.is_user_active(user_id)
+            
+            if not is_active:
+                return await registration_service.start_registration(user_id)
+            
+            return await self.show_main_menu(user_id)
 
 dialog_service = UnifiedDialogService()
