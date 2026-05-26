@@ -89,6 +89,25 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
         logger.warning("Invalid message_callback event: %s", event)
         return
 
+    # НОВОЕ: обработка кнопки "Начать" после диплинка activate
+    if payload == "activate_start":
+        # эмулируем /start → запускаем диалог
+        reply_text, attachments = await dialog_service.start_or_reset(user_id)
+
+        client = MaxClient()
+        try:
+            message_out: Dict[str, Any] = {"text": reply_text}
+            message_out["attachments"] = [] if attachments is None else attachments
+
+            await client.answer_callback(
+                callback_id=callback_id,
+                message=message_out,
+                notification=None,
+            )
+        finally:
+            await client.close()
+        return
+
     reply_text, attachments = await dialog_service.handle_callback(
         user_id=user_id,
         payload=payload,
@@ -135,61 +154,54 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
     user_id = user.get("user_id")
     payload = event.get("payload")
 
-    logger.info(f"BOT_STARTED: user_id={user_id}, payload={payload}")
+    logger.info(
+        "MAX BOT_STARTED: user_id=%s payload=%r event=%r",
+        user_id,
+        payload,
+        event,
+    )
 
     if not user_id:
+        logger.warning("bot_started without user_id: %s", event)
         return
 
     reply_text = None
     attachments = None
 
-    # ========== ОБРАБОТКА PANEL ==========
     if isinstance(payload, str) and payload.strip().lower() == "panel":
+        # уже было
         reply_text, attachments = await handle_command(user_id, "/panel")
-    
-    # ========== ОБРАБОТКА ACTIVATE ==========
+
     elif isinstance(payload, str) and payload.strip().lower() == "activate":
-        # Находим мастера по user_id и проверяем, что он активирован
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
-            )
-            master = result.scalar_one_or_none()
-        
-        if not master:
-            reply_text = "❌ Ошибка: регистрация не завершена. Попробуйте снова."
-            attachments = None
-        else:
-            # Кнопка "Новая заявка"
-            kb = [{
+        # НОВОЕ: диплинк ?start=activate
+        # Показываем кнопку "Начать", которая эмулирует /start
+        reply_text = (
+            "Добро пожаловать в Техник Сервис CRM.\n"
+            "Нажмите кнопку ниже, чтобы начать оформление заявки."
+        )
+
+        # одна кнопка "Начать" с callback payload "activate_start"
+        attachments = [
+            {
                 "type": "inline_keyboard",
                 "payload": {
-                    "buttons": [[{
-                        "type": "callback",
-                        "text": "📝 Новая заявка",
-                        "payload": "menu:new_request",
-                        "intent": "default",
-                    }]]
-                }
-            }]
-            
-            role_text = "Администратор" if master.is_admin else "Мастер"
-            name_text = master.name or master.service_name or ""
-            
-            reply_text = (
-                f"🎉 **Регистрация успешно завершена!**\n\n"
-                f"👤 Роль: {role_text}\n"
-                f"📛 {name_text}\n"
-                f"🆔 ID мастера: `{master.master_id}`\n\n"
-                f"Теперь вы можете создавать заявки.\n\n"
-                f"Нажмите «Новая заявка», чтобы начать."
-            )
-            attachments = kb
-    
-    # ========== ОБЫЧНОЕ ПРИВЕТСТВИЕ ==========
+                    "buttons": [
+                        [
+                            {
+                                "type": "callback",
+                                "text": "Начать",
+                                "payload": "activate_start",
+                                "intent": "default",
+                            }
+                        ]
+                    ]
+                },
+            }
+        ]
+
     else:
         reply_text = (
-            "Авторизация в системе РБТ | CRM.\n"
+            "Привет! Я бот Техник Сервис CRM.\n"
             "Чтобы открыть панель мастера, отправьте команду /panel."
         )
         attachments = None
