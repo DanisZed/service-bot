@@ -13,7 +13,7 @@ from app.db.session import AsyncSessionLocal
 from app.services.requests import create_service_request
 from app.services.devices import list_categories, list_subtypes_by_category
 from app.services.masters_notify import notify_master_request_created
-from app.services.registration_service import registration_service, generate_master_id
+from app.services.registration_service import registration_service
 
 from app.db.models import Master
 
@@ -159,34 +159,8 @@ class UnifiedDialogService:
     
     async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Начинает новый диалог или сбрасывает текущий (для webhook)"""
-        """Начинает новый диалог или сбрасывает текущий (для webhook)"""
-        await self.ensure_user_exists(user_id)
         self.reset(user_id)
-        return await self.start_new_request(user_id)
-        
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id)
-            )
-            master = result.scalar_one_or_none()
-            
-            if not master:
-                master = Master(
-                    master_id=generate_master_id(),
-                    max_user_id=user_id,
-                    plan="free",
-                    is_active=0,
-                    is_admin=0,
-                    created_at=datetime.now(),
-                )
-                session.add(master)
-                await session.commit()
-                return await registration_service.start_registration(user_id)
-            
-            if master.is_active == 0:
-                return await registration_service.start_registration(user_id)
-        
-        return await self.show_main_menu(user_id)
+        return await registration_service.start_registration(user_id)
 
     # ========== ОСТАЛЬНЫЕ МЕТОДЫ ==========
     
@@ -367,9 +341,7 @@ class UnifiedDialogService:
 
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка callback-запросов"""
-            
-        # Убеждаемся, что пользователь существует
-        await self.ensure_user_exists(user_id)
+        
         # Кнопка "Новая заявка" из главного меню
         if payload == "menu:new_request":
             return await self.start_new_request(user_id)
@@ -478,9 +450,13 @@ class UnifiedDialogService:
         """Обработка текстовых сообщений"""
         
         # Проверяем, зарегистрирован ли пользователь
-        is_registered = await self.ensure_user_exists(user_id)
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
+            )
+            master = result.scalar_one_or_none()
         
-        if not is_registered:
+        if not master:
             # Отправляем на регистрацию
             return await registration_service.start_registration(user_id)
         
@@ -689,31 +665,5 @@ class UnifiedDialogService:
         )
         await client.close()
 
-    async def ensure_user_exists(self, user_id: int) -> bool:
-        """Проверяет и создаёт пользователя если его нет"""
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id)
-            )
-            master = result.scalar_one_or_none()
-            
-            if not master:
-                # Создаём пользователя с is_active=0 (ждёт регистрации)
-                master = Master(
-                    max_user_id=user_id,
-                    plan="free",
-                    is_active=0,
-                    is_admin=0,
-                    created_at=datetime.now(),
-                )
-                session.add(master)
-                await session.commit()
-                return False  # Нужна регистрация
-            
-            # Проверяем, нужно ли заполнить данные
-            if master.is_active == 0:
-                return False  # Нужна регистрация
-            
-            return True  # Всё ок, можно работать
 
 dialog_service = UnifiedDialogService()
