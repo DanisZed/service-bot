@@ -471,29 +471,9 @@ class UnifiedDialogService:
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка текстовых сообщений"""
-        
-        # Проверяем, существует ли мастер в БД
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id)
-            )
-            master = result.scalar_one_or_none()
-            
-            if not master:
-                master = Master(
-                    master_id=generate_master_id(),
-                    max_user_id=user_id,
-                    plan="free",
-                    is_active=0,
-                    is_admin=0,
-                    created_at=datetime.now(),
-                )
-                session.add(master)
-                await session.commit()
-                return await registration_service.start_registration(user_id)
-            
-            if master.is_active == 0:
-                return await registration_service.start_registration(user_id)
+    
+        # Главное: убеждаемся, что пользователь существует
+        await self.ensure_user_exists(user_id)
         
         ctx = self._get_ctx(user_id)
         text_clean = text.strip()
@@ -504,6 +484,7 @@ class UnifiedDialogService:
             return await self.show_main_menu(user_id)
 
         if text_lower in ("/start", "новая заявка", "заявка"):
+            self.reset(user_id)
             return await self.start_new_request(user_id)
 
         # После выбора подтипа весь текст идёт по шагам
@@ -699,5 +680,25 @@ class UnifiedDialogService:
         )
         await client.close()
 
+    async def ensure_user_exists(self, user_id: int) -> bool:
+        """Проверяет и создаёт пользователя если его нет"""
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id)
+            )
+            master = result.scalar_one_or_none()
+            
+            if not master:
+                master = Master(
+                    max_user_id=user_id,
+                    plan="free",
+                    is_active=1,  # Сразу активный для теста
+                    is_admin=0,
+                    created_at=datetime.now(),
+                )
+                session.add(master)
+                await session.commit()
+                return True
+            return True
 
 dialog_service = UnifiedDialogService()
