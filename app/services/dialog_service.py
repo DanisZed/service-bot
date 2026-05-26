@@ -470,6 +470,11 @@ class UnifiedDialogService:
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка текстовых сообщений"""
+    
+        # Сначала проверяем, есть ли активная сессия регистрации
+        if registration_service.is_in_registration(user_id):
+            # Если пользователь в процессе регистрации — передаем туда
+            return await registration_service.handle_message(user_id, text)
         
         # Проверяем, зарегистрирован ли пользователь
         async with AsyncSessionLocal() as session:
@@ -479,6 +484,7 @@ class UnifiedDialogService:
             master = result.scalar_one_or_none()
         
         if not master:
+            # Начинаем регистрацию
             return await registration_service.start_registration(user_id)
         
         ctx = self._get_ctx(user_id)
