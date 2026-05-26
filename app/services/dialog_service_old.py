@@ -1,5 +1,4 @@
-"""Сервис диалогов для Max бота (Диспетчер)"""
-
+# app/services/dialog_service.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,12 +11,14 @@ from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
 from app.db.session import AsyncSessionLocal
 from app.services.requests import create_service_request
 from app.services.devices import list_categories, list_subtypes_by_category
+
 from app.services.masters_notify import notify_master_request_created
-from app.services.registration_service import registration_service
 
 from app.db.models import Master
 
 from sqlalchemy import select
+
+from app.services.registration_service import registration_service
 
 
 class DialogState:
@@ -39,9 +40,12 @@ class DialogContext:
     state: str = DialogState.CHOOSE_CATEGORY
 
     chat_id: Optional[int] = None
+    # выбор техники
     main_category: Optional[str] = None
     subtype: Optional[str] = None
-    service_title: Optional[str] = None
+
+    # поля заявки
+    service_title: Optional[str] = None  # человекочитаемое название (можно взять name из subtype)
     address: Optional[str] = None
     address_details: Optional[str] = None
     description: Optional[str] = None
@@ -99,66 +103,6 @@ class UnifiedDialogService:
             }
         ]
 
-    # ========== ГЛАВНОЕ МЕНЮ ДЛЯ ЗАРЕГИСТРИРОВАННЫХ ПОЛЬЗОВАТЕЛЕЙ ==========
-    
-    async def show_main_menu(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
-        """Показывает главное меню для активного пользователя"""
-        
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id)
-            )
-            master = result.scalar_one_or_none()
-            
-            if not master:
-                return "❌ Ошибка: пользователь не найден. Пройдите регистрацию заново.", None
-        
-        kb = self._inline_keyboard([[
-            {
-                "type": "callback",
-                "text": "📝 Новая заявка",
-                "payload": "menu:new_request",
-                "intent": "default",
-            }
-        ]])
-        
-        text = (
-            f"👋 Добро пожаловать, {master.name or master.service_name or 'пользователь'}!\n\n"
-            f"Нажмите кнопку или введите /start, чтобы оформить заявку."
-        )
-        
-        return text, kb
-    
-    # ========== НАЧАЛО НОВОЙ ЗАЯВКИ ==========
-    
-    async def start_new_request(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
-        """Начинает новый диалог создания заявки"""
-        
-        # Сбрасываем предыдущий диалог
-        self.reset(user_id)
-        ctx = self._get_ctx(user_id)
-        ctx.state = DialogState.CHOOSE_CATEGORY
-        
-        async with AsyncSessionLocal() as session:
-            categories = await list_categories(session)
-        
-        # Вертикальные категории
-        rows: List[List[dict]] = []
-        for cat in categories:
-            rows.append([
-                {
-                    "type": "callback",
-                    "text": cat.name,
-                    "payload": f"cat:{cat.code}",
-                    "intent": "default",
-                }
-            ])
-        
-        kb = self._inline_keyboard(rows)
-        return "Выберите категорию техники:", kb
-    
-    # ========== ОСТАЛЬНЫЕ МЕТОДЫ (без изменений) ==========
-    
     def _buttons_address_mode(self) -> List[dict]:
         return self._inline_keyboard(
             [[
@@ -332,17 +276,197 @@ class UnifiedDialogService:
         ]
         return base + "?" + "&".join(parts)
 
-    # ========== ОСНОВНЫЕ МЕТОДЫ ДИАЛОГА ==========
+    # ---------------------------
+    # Публичные методы
+    # ---------------------------
+
+    async def start_or_reset(self, user_id: int) -> Tuple[str, List[dict]]:
+        self._sessions[user_id] = DialogContext(state=DialogState.CHOOSE_CATEGORY)
+        async with AsyncSessionLocal() as session:
+            categories = await list_categories(session)
+
+        # ВЕРТИКАЛЬНЫЕ КАТЕГОРИИ: одна кнопка = одна строка
+        rows: List[List[dict]] = []
+        for cat in categories:
+            rows.append(
+                [
+                    {
+                        "type": "callback",
+                        "text": cat.name,
+                        "payload": f"cat:{cat.code}",
+                        "intent": "default",
+                    }
+                ]
+            )
+
+        kb = self._inline_keyboard(rows)
+        return "Выберите категорию техники:", kb
+
+    async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
+        # Проверяем, активен ли пользователь
+        is_active = await registration_service.is_user_active(user_id)
+        
+        if not is_active:
+            # Проверяем, не вернулся ли пользователь после активации
+            if text.lower() == "/start":
+                # После активации показываем приветствие
+                async with AsyncSessionLocal() as session:
+                    result = await session.execute(
+                        select(Master).where(Master.max_user_id == user_id)
+                    )
+                    master = result.scalar_one_or_none()
+                    
+                    if master and master.is_active == 1:
+                        # Уже активен — показываем главное меню
+                        return await self._show_main_menu(user_id, master)
+                    elif master and master.is_active == 0:
+                        # Есть запись, но не активен — показываем сообщение
+                        return (
+                            "⚠️ Ваша регистрация еще не активирована.\n\n"
+                            "Пожалуйста, перейдите во второй бот и нажмите «Активировать бота».",
+                            None
+                        )
+            
+            # Отправляем на регистрацию
+            return await registration_service.handle_message(user_id, text)
+        ctx = self._get_ctx(user_id)
+        text_clean = text.strip()
+        text_lower = text_clean.lower()
+
+        if text_lower in ("/cancel", "отмена", "стоп"):
+            self.reset(user_id)
+            return "Ок, заявку отменил. Чтобы начать заново, напиши /start.", None
+
+        if text_lower in ("/start", "новая заявка", "заявка"):
+            return await self.start_or_reset(user_id)
+
+        # После выбора подтипа весь текст идёт по шагам адрес/описание/слоты/имя/телефон
+        if ctx.state == DialogState.ADDRESS_MODE:
+            ctx.address = text_clean
+            ctx.state = DialogState.ADDRESS_DETAILS
+            return (
+                "Адрес записал.\n"
+                "Уточни, пожалуйста, квартиру и подъезд.\n"
+                "Если это частный дом, нажми «Частный дом» или напиши эти слова.",
+                self._buttons_private_house(),
+            )
+
+        if ctx.state == DialogState.ADDRESS:
+            ctx.address = text_clean
+            ctx.state = DialogState.ADDRESS_DETAILS
+            return (
+                "Адрес записал.\n"
+                "Уточни, пожалуйста, квартиру и подъезд.\n"
+                "Если это частный дом, нажми «Частный дом» или напиши эти слова.",
+                self._buttons_private_house(),
+            )
+
+        if ctx.state == DialogState.ADDRESS_DETAILS:
+            if text_clean == "Частный дом":
+                ctx.address_details = None
+            else:
+                ctx.address_details = text_clean
+            ctx.state = DialogState.DESCRIPTION
+            return "Принял. Теперь опиши, пожалуйста, что нужно сделать (детально).", None
+
+        if ctx.state == DialogState.DESCRIPTION:
+            ctx.description = text_clean
+            ctx.state = DialogState.SLOT
+            return (
+                "Принял описание. Когда удобно выполнить услугу?\n"
+                "Можешь выбрать один из ближайших дней ниже или написать дату и время текстом.",
+                self._buttons_slot_dates(),
+            )
+
+        if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
+            ctx.date_iso = None
+            ctx.date = None
+            ctx.slot = text_clean
+            ctx.state = DialogState.NAME
+            return "Ок. Как к тебе обращаться?", None
+
+        if ctx.state == DialogState.NAME:
+            ctx.name = text_clean
+            ctx.state = DialogState.PHONE
+            return "Спасибо. Оставь, пожалуйста, номер телефона для связи (мобильный).", None
+
+        if ctx.state == DialogState.PHONE:
+            normalized = self._normalize_phone(text_clean)
+            if not normalized:
+                return (
+                    "Похоже, номер в непонятном формате.\n"
+                    "Введи, пожалуйста, мобильный номер в формате 8ХХХХХХХХХХ или +7ХХХХХХХХХХ.",
+                    None,
+                )
+            ctx.phone = normalized
+            ctx.state = DialogState.CONFIRMED
+
+            async with AsyncSessionLocal() as session:
+                # 1. Гарантированно получаем мастера по MAX user_id
+                result = await session.execute(
+                    select(Master).where(Master.max_user_id == user_id)
+                )
+                master_obj = result.scalar_one_or_none()
+
+                if master_obj is None:
+                    # первый раз этот мастер пишет в бота — создаём
+                    master_obj = Master(
+                        max_user_id=user_id,
+                        # можно взять имя из диалога (как к нему обращаться)
+                        name=ctx.name or None,
+                        # если есть ещё поля (телефон мастера, план, и т.п.) — заполни позже
+                    )
+                    session.add(master_obj)
+                    await session.commit()
+                    await session.refresh(master_obj)
+
+                master_id = master_obj.id
+
+                data = {
+                    "user_id": user_id,
+                    "chat_id": user_id,
+                    "client_id": None,
+                    "client_name": ctx.name,
+                    "client_phone": ctx.phone,
+                    "main_category": ctx.main_category,
+                    "subtype": ctx.subtype,
+                    "custom_device": None,
+                    "service_title": ctx.service_title or ctx.subtype,
+                    "problem_description": ctx.description,
+                    "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
+                    "address": "Мастерская" if ctx.address == "Мастерская" else ctx.address,
+                    "address_details": ctx.address_details,
+                    "date_iso": ctx.date_iso,
+                    "time_slot": ctx.slot,
+                    "datetime_from": None,
+                    "datetime_to": None,
+                    "total_amount": None,
+                    "currency": "RUB",
+                    "payment_status": "unpaid",
+                    "meta": None,
+                    "master_id": master_id,
+                }
+
+                req = await create_service_request(session, data)
+
+            ctx.request_id = req.id
+
+            # Отправили в общий канал заявок
+            await self._send_application_to_channel(user_id, ctx)
+
+            # Отправили личному мастеру (во второй бот) — пока будет заглушка
+            await notify_master_request_created(req.id)
+
+            reply = f"Спасибо, заявку собрал. Номер: {req.id}. Отправляю мастеру, скоро свяжемся."
+            self.reset(user_id)
+            return reply, None
+
+        # если текст прилетел в состоянии выбора категории/подтипа — просто повторить клавиатуру
+        return "Пожалуйста, выбери вариант из кнопок ниже.", None
 
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
-        """Обработка callback-запросов"""
-        
-        # Кнопка "Новая заявка" из главного меню
-        if payload == "menu:new_request":
-            return await self.start_new_request(user_id)
-        
         ctx = self._get_ctx(user_id)
-        
+
         # категория
         if payload.startswith("cat:"):
             category_code = payload.split(":", 1)[1]
@@ -352,16 +476,19 @@ class UnifiedDialogService:
             async with AsyncSessionLocal() as session:
                 subtypes = await list_subtypes_by_category(session, category_code)
 
+            # ВЕРТИКАЛЬНЫЕ ПОДТИПЫ: одна кнопка = одна строка
             rows: List[List[dict]] = []
             for st in subtypes:
-                rows.append([
-                    {
-                        "type": "callback",
-                        "text": st.name,
-                        "payload": f"sub:{st.code}",
-                        "intent": "default",
-                    }
-                ])
+                rows.append(
+                    [
+                        {
+                            "type": "callback",
+                            "text": st.name,
+                            "payload": f"sub:{st.code}",
+                            "intent": "default",
+                        }
+                    ]
+                )
             kb = self._inline_keyboard(rows)
             return "Выберите вид техники:", kb
 
@@ -370,7 +497,7 @@ class UnifiedDialogService:
             subtype_code = payload.split(":", 1)[1]
             ctx.subtype = subtype_code
             ctx.state = DialogState.ADDRESS_MODE
-            ctx.service_title = subtype_code
+            ctx.service_title = subtype_code  # сюда можно потом подставить человекочитаемое имя
 
             text = (
                 f"Записал: {ctx.service_title}.\n"
@@ -441,144 +568,7 @@ class UnifiedDialogService:
             None,
         )
 
-    async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
-        """Обработка текстовых сообщений"""
-        
-        # Проверяем, активен ли пользователь
-        is_active = await registration_service.is_user_active(user_id)
-        
-        if not is_active:
-            # Отправляем на регистрацию
-            return await registration_service.handle_message(user_id, text)
-        
-        ctx = self._get_ctx(user_id)
-        text_clean = text.strip()
-        text_lower = text_clean.lower()
-
-        if text_lower in ("/cancel", "отмена", "стоп"):
-            self.reset(user_id)
-            return await self.show_main_menu(user_id)
-
-        if text_lower in ("/start", "новая заявка", "заявка"):
-            return await self.start_new_request(user_id)
-
-        # После выбора подтипа весь текст идёт по шагам
-        if ctx.state == DialogState.ADDRESS_MODE:
-            ctx.address = text_clean
-            ctx.state = DialogState.ADDRESS_DETAILS
-            return (
-                "Адрес записал.\n"
-                "Уточни, пожалуйста, квартиру и подъезд.\n"
-                "Если это частный дом, нажми «Частный дом» или напиши эти слова.",
-                self._buttons_private_house(),
-            )
-
-        if ctx.state == DialogState.ADDRESS:
-            ctx.address = text_clean
-            ctx.state = DialogState.ADDRESS_DETAILS
-            return (
-                "Адрес записал.\n"
-                "Уточни, пожалуйста, квартиру и подъезд.\n"
-                "Если это частный дом, нажми «Частный дом» или напиши эти слова.",
-                self._buttons_private_house(),
-            )
-
-        if ctx.state == DialogState.ADDRESS_DETAILS:
-            if text_clean == "Частный дом":
-                ctx.address_details = None
-            else:
-                ctx.address_details = text_clean
-            ctx.state = DialogState.DESCRIPTION
-            return "Принял. Теперь опиши, пожалуйста, что нужно сделать (детально).", None
-
-        if ctx.state == DialogState.DESCRIPTION:
-            ctx.description = text_clean
-            ctx.state = DialogState.SLOT
-            return (
-                "Принял описание. Когда удобно выполнить услугу?\n"
-                "Можешь выбрать один из ближайших дней ниже или написать дату и время текстом.",
-                self._buttons_slot_dates(),
-            )
-
-        if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
-            ctx.date_iso = None
-            ctx.date = None
-            ctx.slot = text_clean
-            ctx.state = DialogState.NAME
-            return "Ок. Как к тебе обращаться?", None
-
-        if ctx.state == DialogState.NAME:
-            ctx.name = text_clean
-            ctx.state = DialogState.PHONE
-            return "Спасибо. Оставь, пожалуйста, номер телефона для связи (мобильный).", None
-
-        if ctx.state == DialogState.PHONE:
-            normalized = self._normalize_phone(text_clean)
-            if not normalized:
-                return (
-                    "Похоже, номер в непонятном формате.\n"
-                    "Введи, пожалуйста, мобильный номер в формате 8ХХХХХХХХХХ или +7ХХХХХХХХХХ.",
-                    None,
-                )
-            ctx.phone = normalized
-            ctx.state = DialogState.CONFIRMED
-
-            async with AsyncSessionLocal() as session:
-                # Получаем мастера
-                result = await session.execute(
-                    select(Master).where(Master.max_user_id == user_id)
-                )
-                master_obj = result.scalar_one_or_none()
-
-                if not master_obj:
-                    return "❌ Ошибка: мастер не найден. Пройдите регистрацию заново.", None
-
-                master_id = master_obj.id
-
-                data = {
-                    "user_id": user_id,
-                    "chat_id": user_id,
-                    "client_id": None,
-                    "client_name": ctx.name,
-                    "client_phone": ctx.phone,
-                    "main_category": ctx.main_category,
-                    "subtype": ctx.subtype,
-                    "custom_device": None,
-                    "service_title": ctx.service_title or ctx.subtype,
-                    "problem_description": ctx.description,
-                    "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
-                    "address": "Мастерская" if ctx.address == "Мастерская" else ctx.address,
-                    "address_details": ctx.address_details,
-                    "date_iso": ctx.date_iso,
-                    "time_slot": ctx.slot,
-                    "datetime_from": None,
-                    "datetime_to": None,
-                    "total_amount": None,
-                    "currency": "RUB",
-                    "payment_status": "unpaid",
-                    "meta": None,
-                    "master_id": master_id,
-                }
-
-                req = await create_service_request(session, data)
-
-            ctx.request_id = req.id
-
-            # Отправляем в общий канал заявок
-            await self._send_application_to_channel(user_id, ctx)
-
-            # Отправляем мастеру
-            await notify_master_request_created(req.id)
-
-            reply = f"✅ Спасибо, заявка №{req.id} создана! Мастер скоро свяжется с вами."
-            self.reset(user_id)
-            return reply, None
-
-        # Если текст прилетел в неизвестном состоянии — показываем главное меню
-        return await self.show_main_menu(user_id)
-
     async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
-        """Отправляет заявку в общий канал"""
         request_no = ctx.request_id if ctx.request_id is not None else "—"
         created_at = datetime.now().strftime("%d.%m.%y")
         lines = [f"📝 Заявка № {request_no} от {created_at}"]
