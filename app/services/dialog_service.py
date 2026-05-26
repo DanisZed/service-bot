@@ -159,7 +159,10 @@ class UnifiedDialogService:
     
     async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Начинает новый диалог или сбрасывает текущий (для webhook)"""
+        """Начинает новый диалог или сбрасывает текущий (для webhook)"""
+        await self.ensure_user_exists(user_id)
         self.reset(user_id)
+        return await self.start_new_request(user_id)
         
         async with AsyncSessionLocal() as session:
             result = await session.execute(
@@ -365,6 +368,10 @@ class UnifiedDialogService:
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка callback-запросов"""
         
+            """Обработка callback-запросов"""
+    
+        # Убеждаемся, что пользователь существует
+        await self.ensure_user_exists(user_id)
         # Кнопка "Новая заявка" из главного меню
         if payload == "menu:new_request":
             return await self.start_new_request(user_id)
