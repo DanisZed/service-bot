@@ -143,14 +143,48 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
     reply_text = None
     attachments = None
 
-    # ========== ОБРАБОТКА ЗАВЕРШЕНИЯ РЕГИСТРАЦИИ ==========
-    if isinstance(payload, str) and payload.startswith("complete_"):
-        master_id = payload.replace("complete_", "")
-        reply_text, attachments = await handle_complete_registration(master_id, user_id)
-    
-    # ========== ОБРАБОТКА ПАНЕЛИ ==========
-    elif isinstance(payload, str) and payload.strip().lower() == "panel":
+    # ========== ОБРАБОТКА PANEL ==========
+    if isinstance(payload, str) and payload.strip().lower() == "panel":
         reply_text, attachments = await handle_command(user_id, "/panel")
+    
+    # ========== ОБРАБОТКА ACTIVATE ==========
+    elif isinstance(payload, str) and payload.strip().lower() == "activate":
+        # Находим мастера по user_id и проверяем, что он активирован
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
+            )
+            master = result.scalar_one_or_none()
+        
+        if not master:
+            reply_text = "❌ Ошибка: регистрация не завершена. Попробуйте снова."
+            attachments = None
+        else:
+            # Кнопка "Новая заявка"
+            kb = [{
+                "type": "inline_keyboard",
+                "payload": {
+                    "buttons": [[{
+                        "type": "callback",
+                        "text": "📝 Новая заявка",
+                        "payload": "menu:new_request",
+                        "intent": "default",
+                    }]]
+                }
+            }]
+            
+            role_text = "Администратор" if master.is_admin else "Мастер"
+            name_text = master.name or master.service_name or ""
+            
+            reply_text = (
+                f"🎉 **Регистрация успешно завершена!**\n\n"
+                f"👤 Роль: {role_text}\n"
+                f"📛 {name_text}\n"
+                f"🆔 ID мастера: `{master.master_id}`\n\n"
+                f"Теперь вы можете создавать заявки.\n\n"
+                f"Нажмите «Новая заявка», чтобы начать."
+            )
+            attachments = kb
     
     # ========== ОБЫЧНОЕ ПРИВЕТСТВИЕ ==========
     else:

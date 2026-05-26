@@ -34,22 +34,23 @@ async def activate_master(master_id: str, user_id: int) -> Tuple[str, Optional[L
         role_text = "Администратор" if master.is_admin else "Мастер"
         name_text = master.name or master.service_name or ""
         
-        # Ссылка на первого бота с параметром complete_
+        # В функции activate_master():
+
+        # Ссылка на первого бота с параметром activate (без master_id)
         dispatcher_bot_link = os.getenv("MAX_DISPATCHER_BOT_LINK", "https://max.ru/id027308840424_bot")
-        complete_link = f"{dispatcher_bot_link}?start=complete_{master.master_id}"
-        print(f"🔗 Ссылка для завершения регистрации: {complete_link}")  # добавить лог
-        
+        activate_link = f"{dispatcher_bot_link}?start=activate"
+
         kb = [{
             "type": "inline_keyboard",
             "payload": {
                 "buttons": [[{
                     "type": "link",
                     "text": "✅ Завершить регистрацию",
-                    "url": complete_link,
+                    "url": activate_link,
                 }]]
             }
         }]
-        
+
         text = (
             f"✅ **Активация прошла успешно!**\n\n"
             f"👤 Роль: {role_text}\n"
