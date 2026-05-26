@@ -140,13 +140,22 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
     if not user_id:
         return
 
-    # Сначала пробуем обработать как команду с payload
-    reply_text, attachments = await handle_command(user_id, payload=payload)
+    reply_text = None
+    attachments = None
+
+    # ========== ОБРАБОТКА ЗАВЕРШЕНИЯ РЕГИСТРАЦИИ ==========
+    if isinstance(payload, str) and payload.startswith("complete_"):
+        master_id = payload.replace("complete_", "")
+        reply_text, attachments = await handle_complete_registration(master_id, user_id)
     
-    # Если не обработалось (payload не complete_), то стандартное приветствие
-    if not reply_text:
+    # ========== ОБРАБОТКА ПАНЕЛИ ==========
+    elif isinstance(payload, str) and payload.strip().lower() == "panel":
+        reply_text, attachments = await handle_command(user_id, "/panel")
+    
+    # ========== ОБЫЧНОЕ ПРИВЕТСТВИЕ ==========
+    else:
         reply_text = (
-            "Привет! Я бот Техник Сервис CRM.\n"
+            "Авторизация в системе РБТ | CRM.\n"
             "Чтобы открыть панель мастера, отправьте команду /panel."
         )
         attachments = None
