@@ -79,6 +79,13 @@ class RegistrationService:
         print(f"🗑️ Сброс контекста регистрации для user_id={user_id}")
         self._sessions.pop(user_id, None)
     
+    def is_in_registration(self, user_id: int) -> bool:
+        """Проверяет, находится ли пользователь в процессе регистрации"""
+        ctx = self._sessions.get(user_id)
+        if not ctx:
+            return False
+        return ctx.state != RegistrationState.CHOOSE_ROLE
+    
     def _inline_keyboard(self, rows: List[List[dict]]) -> List[dict]:
         return [{
             "type": "inline_keyboard",
@@ -86,17 +93,17 @@ class RegistrationService:
         }]
     
     async def start_registration(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
-        """Начало регистрации — показываем кнопку начала (НЕ сбрасываем контекст!)"""
+        """Начало регистрации — показываем кнопку начала"""
         
-        # НЕ СБРАСЫВАЕМ КОНТЕКСТ ЗДЕСЬ!
-        ctx = self._get_ctx(user_id)
-        
-        # Если уже есть активная регистрация — продолжаем её
-        if ctx.state != RegistrationState.CHOOSE_ROLE:
-            # Продолжаем с текущего состояния
+        # Если уже в процессе регистрации — продолжаем
+        if self.is_in_registration(user_id):
             return await self._continue_registration(user_id)
         
-        # Иначе показываем кнопку начала
+        # Создаем новый контекст
+        self.reset(user_id)
+        ctx = self._get_ctx(user_id)
+        ctx.state = RegistrationState.CHOOSE_ROLE
+        
         kb = self._inline_keyboard([[
             {
                 "type": "callback",
