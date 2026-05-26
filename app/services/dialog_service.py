@@ -443,15 +443,36 @@ class UnifiedDialogService:
         )
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
-        """Обработка текстовых сообщений"""
+            """Обработка текстовых сообщений"""
+    
+        # Проверяем, существует ли мастер в БД
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id)
+            )
+            master = result.scalar_one_or_none()
+            
+            # Если мастера нет — создаём автоматически
+            if not master:
+                from app.services.registration_service import generate_master_id
+                master = Master(
+                    master_id=generate_master_id(),
+                    max_user_id=user_id,
+                    plan="free",
+                    is_active=0,
+                    is_admin=0,
+                    created_at=datetime.now(),
+                )
+                session.add(master)
+                await session.commit()
+                # Отправляем на регистрацию для заполнения данных
+                return await registration_service.start_registration(user_id)
+            
+            # Если мастер есть, но не активен — отправляем на регистрацию
+            if master.is_active == 0:
+                return await registration_service.start_registration(user_id)
         
-        # Проверяем, активен ли пользователь
-        is_active = await registration_service.is_user_active(user_id)
-        
-        if not is_active:
-            # Отправляем на регистрацию
-            return await registration_service.handle_message(user_id, text)
-        
+        # Если мастер активен — продолжаем обычный диалог
         ctx = self._get_ctx(user_id)
         text_clean = text.strip()
         text_lower = text_clean.lower()
