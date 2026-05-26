@@ -99,8 +99,6 @@ class UnifiedDialogService:
             }
         ]
 
-    # ========== ГЛАВНОЕ МЕНЮ ДЛЯ ЗАРЕГИСТРИРОВАННЫХ ПОЛЬЗОВАТЕЛЕЙ ==========
-    
     async def show_main_menu(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Показывает главное меню для активного пользователя"""
         
@@ -129,12 +127,9 @@ class UnifiedDialogService:
         
         return text, kb
     
-    # ========== НАЧАЛО НОВОЙ ЗАЯВКИ ==========
-    
     async def start_new_request(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Начинает новый диалог создания заявки"""
         
-        # Сбрасываем предыдущий диалог
         self.reset(user_id)
         ctx = self._get_ctx(user_id)
         ctx.state = DialogState.CHOOSE_CATEGORY
@@ -142,7 +137,6 @@ class UnifiedDialogService:
         async with AsyncSessionLocal() as session:
             categories = await list_categories(session)
         
-        # Вертикальные категории
         rows: List[List[dict]] = []
         for cat in categories:
             rows.append([
@@ -160,7 +154,7 @@ class UnifiedDialogService:
     async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Начинает новый диалог или сбрасывает текущий (для webhook)"""
         self.reset(user_id)
-            # ===== ДОБАВЬ ЭТУ ПРОВЕРКУ =====
+        
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Master).where(Master.max_user_id == user_id)
@@ -169,12 +163,9 @@ class UnifiedDialogService:
         
         if not master or master.is_active == 0:
             return await registration_service.start_registration(user_id)
-        # ===============================
+        
+        return await self.start_new_request(user_id)
 
-        return await registration_service.start_registration(user_id)
-
-    # ========== ОСТАЛЬНЫЕ МЕТОДЫ ==========
-    
     def _buttons_address_mode(self) -> List[dict]:
         return self._inline_keyboard(
             [[
@@ -348,18 +339,40 @@ class UnifiedDialogService:
         ]
         return base + "?" + "&".join(parts)
 
-    # ========== ОСНОВНЫЕ МЕТОДЫ ДИАЛОГА ==========
-
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка callback-запросов"""
         
-        # Кнопка "Новая заявка" из главного меню
+        print(f"🔔 handle_callback: user_id={user_id}, payload={payload}")
+        
+        # Callback от регистрации
+        if payload == "registration:start" or payload.startswith("role:"):
+            return await registration_service.handle_callback(user_id, payload)
+        
+        # Кнопка "Новая заявка"
         if payload == "menu:new_request":
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
+                )
+                master = result.scalar_one_or_none()
+            
+            if not master:
+                return await registration_service.start_registration(user_id)
+            
             return await self.start_new_request(user_id)
+        
+        # Проверяем, зарегистрирован ли пользователь
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
+            )
+            master = result.scalar_one_or_none()
+        
+        if not master:
+            return await registration_service.start_registration(user_id)
         
         ctx = self._get_ctx(user_id)
         
-        # категория
         if payload.startswith("cat:"):
             category_code = payload.split(":", 1)[1]
             ctx.main_category = category_code
@@ -381,7 +394,6 @@ class UnifiedDialogService:
             kb = self._inline_keyboard(rows)
             return "Выберите вид техники:", kb
 
-        # подтип
         if payload.startswith("sub:"):
             subtype_code = payload.split(":", 1)[1]
             ctx.subtype = subtype_code
@@ -397,7 +409,6 @@ class UnifiedDialogService:
             )
             return text, self._buttons_address_mode()
 
-        # режим адреса
         if payload == "address_mode:workshop" and ctx.state == DialogState.ADDRESS_MODE:
             ctx.address = "Мастерская"
             ctx.address_details = None
@@ -460,15 +471,14 @@ class UnifiedDialogService:
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка текстовых сообщений"""
         
-        # ===== ДОБАВЬ ЭТУ ПРОВЕРКУ =====
+        # Проверяем, зарегистрирован ли пользователь
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id)
+                select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
             )
             master = result.scalar_one_or_none()
         
-        if not master or master.is_active == 0:
-            # Пользователь не зарегистрирован — отправляем на регистрацию
+        if not master:
             return await registration_service.start_registration(user_id)
         
         ctx = self._get_ctx(user_id)
@@ -483,7 +493,6 @@ class UnifiedDialogService:
             self.reset(user_id)
             return await self.start_new_request(user_id)
 
-        # После выбора подтипа весь текст идёт по шагам
         if ctx.state == DialogState.ADDRESS_MODE:
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
