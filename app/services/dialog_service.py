@@ -697,7 +697,7 @@ class UnifiedDialogService:
                 master = Master(
                     max_user_id=user_id,
                     plan="free",
-                    is_active=1,  # Сразу активный для теста
+                    is_active=0,  # Сразу активный для теста
                     is_admin=0,
                     created_at=datetime.now(),
                 )
