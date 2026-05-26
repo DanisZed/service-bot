@@ -19,45 +19,150 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ========== Таблица master ==========
+    # ========== ТАБЛИЦА master ==========
     
-    # 1. Добавить lastname после name
-    op.add_column('master', sa.Column('lastname', sa.Text, nullable=True))
+    # 1. Добавляем lastname (после name)
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='master' AND column_name='lastname') THEN
+                ALTER TABLE master ADD COLUMN lastname TEXT;
+            END IF;
+        END $$;
+    """)
     
-    # 2. Добавить service_name
-    op.add_column('master', sa.Column('service_name', sa.Text, nullable=True))
+    # 2. Добавляем service_name
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='master' AND column_name='service_name') THEN
+                ALTER TABLE master ADD COLUMN service_name TEXT;
+            END IF;
+        END $$;
+    """)
     
-    # 3. Добавить master_id (уникальный строковый ID формата МСТР + 7 цифр)
-    op.add_column('master', sa.Column('master_id', sa.String(12), nullable=True, unique=True))
-    op.create_index('ix_master_master_id', 'master', ['master_id'])
+    # 3. Добавляем master_id (уникальный строковый ID)
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='master' AND column_name='master_id') THEN
+                ALTER TABLE master ADD COLUMN master_id VARCHAR(12) UNIQUE;
+                CREATE INDEX ix_master_master_id ON master(master_id);
+            END IF;
+        END $$;
+    """)
     
-    # 4. Добавить is_admin
-    op.add_column('master', sa.Column('is_admin', sa.Integer, nullable=False, server_default='0'))
+    # 4. Добавляем is_admin
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='master' AND column_name='is_admin') THEN
+                ALTER TABLE master ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+            END IF;
+        END $$;
+    """)
     
-    # ========== Таблица service_request ==========
+    # ========== ТАБЛИЦА service_request ==========
     
-    # 5. Добавить service_name
-    op.add_column('service_request', sa.Column('service_name', sa.Text, nullable=True))
+    # 5. Добавляем service_name
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='service_request' AND column_name='service_name') THEN
+                ALTER TABLE service_request ADD COLUMN service_name TEXT;
+                CREATE INDEX ix_service_request_service_name ON service_request(service_name);
+            END IF;
+        END $$;
+    """)
     
-    # 6. Добавить service_id (уникальный строковый ID формата СРВС + 6 цифр)
-    op.add_column('service_request', sa.Column('service_id', sa.String(10), nullable=True, unique=True))
-    op.create_index('ix_service_request_service_id', 'service_request', ['service_id'])
-    
-    # 7. Добавить service_name в service_request
-    op.add_column('service_request', sa.Column('service_name', sa.Text, nullable=True))
-    op.create_index('ix_service_request_service_name', 'service_request', ['service_name'])
+    # 6. Добавляем service_id (уникальный строковый ID)
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='service_request' AND column_name='service_id') THEN
+                ALTER TABLE service_request ADD COLUMN service_id VARCHAR(10) UNIQUE;
+                CREATE INDEX ix_service_request_service_id ON service_request(service_id);
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:
-    # ========== Таблица service_request ==========
-    op.drop_index('ix_service_request_service_name', table_name='service_request')
-    op.drop_column('service_request', 'service_name')
-    op.drop_index('ix_service_request_service_id', table_name='service_request')
-    op.drop_column('service_request', 'service_id')
+    # ========== ТАБЛИЦА service_request ==========
     
-    # ========== Таблица master ==========
-    op.drop_column('master', 'is_admin')
-    op.drop_index('ix_master_master_id', table_name='master')
-    op.drop_column('master', 'master_id')
-    op.drop_column('master', 'service_name')
-    op.drop_column('master', 'lastname')
+    # Удаляем service_id
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name='service_request' AND column_name='service_id') THEN
+                DROP INDEX IF EXISTS ix_service_request_service_id;
+                ALTER TABLE service_request DROP COLUMN service_id;
+            END IF;
+        END $$;
+    """)
+    
+    # Удаляем service_name
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name='service_request' AND column_name='service_name') THEN
+                DROP INDEX IF EXISTS ix_service_request_service_name;
+                ALTER TABLE service_request DROP COLUMN service_name;
+            END IF;
+        END $$;
+    """)
+    
+    # ========== ТАБЛИЦА master ==========
+    
+    # Удаляем is_admin
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name='master' AND column_name='is_admin') THEN
+                ALTER TABLE master DROP COLUMN is_admin;
+            END IF;
+        END $$;
+    """)
+    
+    # Удаляем master_id
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name='master' AND column_name='master_id') THEN
+                DROP INDEX IF EXISTS ix_master_master_id;
+                ALTER TABLE master DROP COLUMN master_id;
+            END IF;
+        END $$;
+    """)
+    
+    # Удаляем service_name
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name='master' AND column_name='service_name') THEN
+                ALTER TABLE master DROP COLUMN service_name;
+            END IF;
+        END $$;
+    """)
+    
+    # Удаляем lastname
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF EXISTS (SELECT 1 FROM information_schema.columns 
+                       WHERE table_name='master' AND column_name='lastname') THEN
+                ALTER TABLE master DROP COLUMN lastname;
+            END IF;
+        END $$;
+    """)
