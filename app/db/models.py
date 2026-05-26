@@ -96,19 +96,24 @@ class Master(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
 
     # Привязка к MAX / ботам
-    max_user_id = Column(BigInteger, nullable=False, unique=True)  # user_id мастера в MAX
-    max_chat_id = Column(BigInteger, nullable=True)                # если понадобится
+    max_user_id = Column(BigInteger, nullable=False, unique=True)
+    max_chat_id = Column(BigInteger, nullable=True)
+
+    # Новые поля
+    master_id = Column(String(12), unique=True, nullable=True)      # МСТР + 7 цифр
+    lastname = Column(Text, nullable=True)                          # фамилия
+    service_name = Column(Text, nullable=True)                      # название сервиса (для админа)
+    is_admin = Column(Integer, nullable=False, default=0)           # 1 - админ, 0 - мастер
 
     name = Column(Text, nullable=True)
     phone = Column(String(32), nullable=True)
     email = Column(String(255), nullable=True)
 
-    plan = Column(String(32), nullable=False, default="free")      # free / pro / ...
+    plan = Column(String(32), nullable=False, default="free")
     is_active = Column(Integer, nullable=False, default=1)
 
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
-     # новые поля:
     login_code = Column(String(16), nullable=True)
     login_code_expires_at = Column(DateTime(timezone=True), nullable=True)
 
