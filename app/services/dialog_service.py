@@ -476,9 +476,13 @@ class UnifiedDialogService:
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка текстовых сообщений"""
-    
-        # Главное: убеждаемся, что пользователь существует
-        await self.ensure_user_exists(user_id)
+        
+        # Проверяем, зарегистрирован ли пользователь
+        is_registered = await self.ensure_user_exists(user_id)
+        
+        if not is_registered:
+            # Отправляем на регистрацию
+            return await registration_service.start_registration(user_id)
         
         ctx = self._get_ctx(user_id)
         text_clean = text.strip()
@@ -694,16 +698,22 @@ class UnifiedDialogService:
             master = result.scalar_one_or_none()
             
             if not master:
+                # Создаём пользователя с is_active=0 (ждёт регистрации)
                 master = Master(
                     max_user_id=user_id,
                     plan="free",
-                    is_active=0,  # Сразу активный для теста
+                    is_active=0,
                     is_admin=0,
                     created_at=datetime.now(),
                 )
                 session.add(master)
                 await session.commit()
-                return True
-            return True
+                return False  # Нужна регистрация
+            
+            # Проверяем, нужно ли заполнить данные
+            if master.is_active == 0:
+                return False  # Нужна регистрация
+            
+            return True  # Всё ок, можно работать
 
 dialog_service = UnifiedDialogService()
