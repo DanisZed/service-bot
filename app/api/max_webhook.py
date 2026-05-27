@@ -127,26 +127,6 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
         await client.close()
 
 
-@router.post("/max/webhook")
-async def max_webhook(
-    request: Request, background_tasks: BackgroundTasks
-) -> Dict[str, Any]:
-  body = await request.json()
-  logger.info("MAX WEBHOOK BODY: %s", body)
-
-  update_type = body.get("update_type")
-
-  if update_type == "message_created":
-      background_tasks.add_task(handle_message_created, body)
-  elif update_type == "message_callback":
-      background_tasks.add_task(handle_message_callback, body)
-  elif update_type == "bot_started":
-      background_tasks.add_task(handle_bot_started, body)
-  else:
-      logger.debug("Ignored update_type: %s", update_type)
-
-  return {"success": True}
-
 # app/api/max_webhook.py
 
 async def handle_bot_started(event: Dict[str, Any]) -> None:
@@ -215,3 +195,25 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
         )
     finally:
         await client.close()
+
+
+@router.post("/max/webhook")
+async def max_webhook(
+    request: Request, background_tasks: BackgroundTasks
+) -> Dict[str, Any]:
+  body = await request.json()
+  logger.info("MAX WEBHOOK BODY: %s", body)
+
+  update_type = body.get("update_type")
+
+  if update_type == "message_created":
+      background_tasks.add_task(handle_message_created, body)
+  elif update_type == "message_callback":
+      background_tasks.add_task(handle_message_callback, body)
+  elif update_type == "bot_started":
+      background_tasks.add_task(handle_bot_started, body)
+  else:
+      logger.debug("Ignored update_type: %s", update_type)
+
+  return {"success": True}
+
