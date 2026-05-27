@@ -34,19 +34,17 @@ async def activate_master(master_id: str, user_id: int) -> Tuple[str, Optional[L
         role_text = "Администратор" if master.is_admin else "Мастер"
         name_text = master.name or master.service_name or ""
         
-        # В функции activate_master():
-
-        # Ссылка на первого бота с параметром activate (без master_id)
-        dispatcher_bot_link = os.getenv("MAX_DISPATCHER_BOT_LINK", "https://max.ru/id027308840424_bot")
-        activate_link = f"{dispatcher_bot_link}?start=activate"
-
+        # Формируем ссылку на фронт для завершения регистрации
+        panel_base_url = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+        complete_link = f"{panel_base_url}/register?code=complete_{master.master_id}"
+        
         kb = [{
             "type": "inline_keyboard",
             "payload": {
                 "buttons": [[{
                     "type": "link",
                     "text": "✅ Завершить регистрацию",
-                    "url": activate_link,
+                    "url": complete_link,
                 }]]
             }
         }]
@@ -56,7 +54,7 @@ async def activate_master(master_id: str, user_id: int) -> Tuple[str, Optional[L
             f"👤 Роль: {role_text}\n"
             f"📛 {name_text}\n"
             f"🆔 ID мастера: `{master.master_id}`\n\n"
-            f"Нажмите «Завершить регистрацию», чтобы вернуться в бот и начать работу."
+            f"Нажмите «Завершить регистрацию», чтобы войти в панель управления."
         )
         
         return text, kb
