@@ -58,6 +58,8 @@ async def handle_activation_start(user_id: int, payload: str) -> Tuple[str, Opti
                 f"🆔 ID: `{master.master_id}`\n\n"
                 f"Теперь вы можете вернуться в первый бот и начать работу.\n\n"
                 f"Нажмите «Завершить регистрацию», чтобы продолжить."
+                f"Нажмите «Завершить регистрацию», чтобы продолжить."
+                
             )
             
             return text, kb
