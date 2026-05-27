@@ -21,13 +21,11 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     sender = message.get("sender") or {}
     body = message.get("body") or {}
 
-    # Временно логируем всё сообщение целиком
+    # Логируем всё сообщение целиком
     logger.info("RAW MAX MESSAGE: %r", message)
 
     user_id = sender.get("user_id")
     text = body.get("text", "")
-    # пробуем достать payload/start-параметр, если он есть в событии
-    # (если у тебя другое поле — здесь поправим)
     payload = body.get("payload") or body.get("start_param")
 
     logger.info(
@@ -41,16 +39,37 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
         logger.warning("message_created without user_id: %s", event)
         return
 
-    reply_text = None
-    attachments = None
+    reply_text: Optional[str] = None
+    attachments: Optional[List[dict]] = None
 
-    # 0) Обработка диплинка start=panel:
-    # если пользователь открыл бота по ссылке
-    # https://max.ru/id027308840424_bot?start=panel
-    # и MAX прокинул сюда payload="panel" — считаем это как команду /panel.
+    # 0) Диплинк start=panel -> /panel
     if isinstance(payload, str) and payload.strip().lower() == "panel":
-        # имитируем, что пользователь ввёл /panel
         reply_text, attachments = await handle_command(user_id, "/panel")
+
+    # НОВОЕ: диплинк start=activate -> показать кнопку "Начать"
+    if reply_text is None and isinstance(payload, str) and payload.strip().lower() == "activate":
+        reply_text = (
+            "✅ Регистрация завершена.\n\n"
+            "Теперь вы можете создавать заявки через этого бота.\n"
+            "Нажмите кнопку ниже, чтобы начать оформление первой заявки."
+        )
+        attachments = [
+            {
+                "type": "inline_keyboard",
+                "payload": {
+                    "buttons": [
+                        [
+                            {
+                                "type": "callback",
+                                "text": "🚀 Начать",
+                                "payload": "activate_start",
+                                "intent": "default",
+                            }
+                        ]
+                    ]
+                },
+            }
+        ]
 
     # 1) Если диплинк не сработал или payload другой — пробуем обычную команду
     if reply_text is None:
