@@ -226,7 +226,7 @@ async def get_current_master(
     )
 
 
- @router.post("/complete-registration", response_model=CompleteRegistrationResponse)
+@router.post("/complete-registration", response_model=CompleteRegistrationResponse)
 async def complete_registration(
     request: CompleteRegistrationRequest,
     db: AsyncSession = Depends(get_db),
