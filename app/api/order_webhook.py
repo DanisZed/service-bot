@@ -67,6 +67,12 @@ async def order_webhook(request: Request, background_tasks: BackgroundTasks) -> 
     """Webhook для order_bot"""
     
     body = await request.json()
+    print("\n" + "="*60)
+    print("🔔 ORDER BOT WEBHOOK")
+    print(f"update_type: {body.get('update_type')}")
+    print(f"body: {body}")
+    print("="*60 + "\n")
+    
     logger.info(f"Order bot webhook: {body}")
     
     update_type = body.get("update_type")
@@ -76,9 +82,14 @@ async def order_webhook(request: Request, background_tasks: BackgroundTasks) -> 
         user_id = user.get("user_id")
         payload = body.get("payload")
         
+        print(f"🔔 bot_started: user_id={user_id}, payload={payload}")
+        
         if payload and payload.startswith("activate_"):
             master_id = payload.replace("activate_", "")
+            print(f"🔔 Активируем мастера: {master_id}")
+            
             reply_text, attachments = await activate_master(master_id, user_id)
+            print(f"🔔 Ответ: {reply_text[:100]}...")
             
             client = MaxOrderBotClient()
             try:
@@ -87,7 +98,14 @@ async def order_webhook(request: Request, background_tasks: BackgroundTasks) -> 
                     text=reply_text,
                     attachments=attachments,
                 )
+                print("🔔 Сообщение отправлено!")
+            except Exception as e:
+                print(f"🔔 Ошибка отправки: {e}")
             finally:
                 await client.close()
+        else:
+            print(f"🔔 payload не начинается с activate_: {payload}")
+    else:
+        print(f"🔔 update_type не bot_started: {update_type}")
     
     return {"success": True}
