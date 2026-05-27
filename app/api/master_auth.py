@@ -36,6 +36,16 @@ SECRET_KEY = os.getenv(
 
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
 
+class CompleteRegistrationRequest(BaseModel):
+    master_id: str
+
+class CompleteRegistrationResponse(BaseModel):
+    success: bool
+    master_id: str
+    name: str
+    role: str
+    message: Optional[str] = None
+
 
 async def get_db():
     async with AsyncSessionLocal() as session:
@@ -214,6 +224,53 @@ async def get_current_master(
         name=master.name,
         plan=master.plan,
     )
+
+
+ @router.post("/complete-registration", response_model=CompleteRegistrationResponse)
+async def complete_registration(
+    request: CompleteRegistrationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Завершает регистрацию мастера после активации в боте"""
+    
+    result = await db.execute(
+        select(Master).where(Master.master_id == request.master_id)
+    )
+    master = result.scalar_one_or_none()
+    
+    if not master:
+        raise HTTPException(status_code=404, detail="Master not found")
+    
+    if master.is_active != 1:
+        raise HTTPException(status_code=400, detail="Master not activated yet")
+    
+    # Генерируем токен для входа
+    from app.services.token_service import create_access_token
+    access_token = create_access_token(
+        data={"sub": str(master.id), "master_id": master.master_id, "role": "admin" if master.is_admin else "master"}
+    )
+    
+    # Устанавливаем куку
+    response = CompleteRegistrationResponse(
+        success=True,
+        master_id=master.master_id,
+        name=master.name or master.service_name or "",
+        role="Администратор" if master.is_admin else "Мастер",
+    )
+    
+    # Создаем Response с установкой куки
+    from fastapi.responses import JSONResponse
+    resp = JSONResponse(content=response.dict())
+    resp.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        max_age=3600 * 24 * 7,
+        samesite="lax",
+        secure=True,
+    )
+    
+    return resp   
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
