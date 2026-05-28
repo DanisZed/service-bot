@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.api.deps import get_current_master
-from app.db.session import get_db
+from app.db.session import get_session
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -50,7 +50,7 @@ class UpdatePhoneRequest(BaseModel):
 async def update_my_phone(
     data: UpdatePhoneRequest,
     current_master=Depends(get_current_master),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_session),
 ):
     """
     Обновить телефон текущего авторизованного пользователя (мастера или администратора)
