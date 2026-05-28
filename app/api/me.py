@@ -35,9 +35,10 @@ class MeOut(BaseModel):
     # ID в MAX
     user_id: int
     
-    # Отображаемое имя (формируется на бэке)
-    display_name: str
-    display_role: str
+    # Отображаемые поля
+    display_name: str      # "Имя Фамилия"
+    display_role: str      # "Администратор" или "Мастер"
+    display_header: Optional[str] = None  # название сервиса (только для админа)
 
 
 # ========== НОВЫЕ ЭНДПОИНТЫ ДЛЯ ТЕЛЕФОНА ==========
@@ -55,7 +56,6 @@ async def update_my_phone(
     """
     Обновить телефон текущего авторизованного пользователя (мастера или администратора)
     """
-    # Обновляем телефон
     current_master.phone = data.phone
     await db.commit()
     await db.refresh(current_master)
@@ -92,30 +92,21 @@ async def get_me(current_master=Depends(get_current_master)):
     is_admin = current_master.is_admin == 1
     role = "admin" if is_admin else "master"
     
-    # Формируем display_name
-    if is_admin:
-        # Для сервисного центра: "Название Сервиса | Фамилия Имя"
-        parts = []
-        if current_master.service_name:
-            parts.append(current_master.service_name)
-        name_parts = []
-        if current_master.lastname:
-            name_parts.append(current_master.lastname)
-        if current_master.name:
-            name_parts.append(current_master.name)
-        if name_parts:
-            parts.append(" ".join(name_parts))
-        display_name = " | ".join(parts) if parts else "Администратор"
-        display_role = "Сервисный центр"
-    else:
-        # Для мастера: "Фамилия Имя"
-        name_parts = []
-        if current_master.lastname:
-            name_parts.append(current_master.lastname)
-        if current_master.name:
-            name_parts.append(current_master.name)
-        display_name = " ".join(name_parts) if name_parts else "Мастер"
-        display_role = "Мастер"
+    # Формируем display_name (только Имя Фамилия, БЕЗ service_name)
+    name_parts = []
+    if current_master.lastname:
+        name_parts.append(current_master.lastname)
+    if current_master.name:
+        name_parts.append(current_master.name)
+    display_name = " ".join(name_parts) if name_parts else ("Администратор" if is_admin else "Мастер")
+    
+    # display_role: "Администратор" или "Мастер"
+    display_role = "Администратор" if is_admin else "Мастер"
+    
+    # display_header: название сервиса (только для админа)
+    display_header = None
+    if is_admin and current_master.service_name:
+        display_header = current_master.service_name
     
     return MeOut(
         id=current_master.id,
@@ -130,24 +121,5 @@ async def get_me(current_master=Depends(get_current_master)):
         user_id=current_master.max_user_id,
         display_name=display_name,
         display_role=display_role,
+        display_header=display_header,
     )
-
-
-# ========== СТАРЫЙ КОД (закомментирован) ==========
-# from fastapi import APIRouter, Depends
-# from pydantic import BaseModel
-# from typing import Optional
-# from app.api.deps import get_current_master
-
-# router = APIRouter(prefix="/api/me", tags=["me"])
-
-# class MeOut(BaseModel):
-#     username: str
-#     user_id: int
-
-# @router.get("", response_model=MeOut)
-# async def get_me(current_master=Depends(get_current_master)):
-#     return MeOut(
-#         username=current_master.name,
-#         user_id=current_master.max_user_id,
-#     )
