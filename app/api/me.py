@@ -79,6 +79,60 @@ async def get_my_phone(
         "master_id": current_master.master_id
     }
 
+# ========== ЭНДПОИНТ ДЛЯ АВАТАРА ==========
+
+class AvatarResponse(BaseModel):
+    avatar_url: Optional[str] = None
+    full_avatar_url: Optional[str] = None
+
+
+@router.get("/avatar", response_model=AvatarResponse)
+async def get_my_avatar(
+    current_master=Depends(get_current_master),
+):
+    """
+    Получает URL аватара текущего пользователя из MAX API
+    """
+    import httpx
+    import os
+    
+    max_user_id = current_master.max_user_id
+    max_bot_token = os.getenv("MAX_BOT_TOKEN")
+    
+    if not max_bot_token:
+        raise HTTPException(status_code=500, detail="MAX_BOT_TOKEN не настроен")
+    
+    # URL для получения пользователя из MAX API
+    max_api_url = f"https://api.max.ru/v1/users/{max_user_id}"
+    
+    headers = {
+        "Authorization": f"Bearer {max_bot_token}",
+        "Content-Type": "application/json"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(max_api_url, headers=headers)
+            response.raise_for_status()
+            user_data = response.json()
+            
+            return AvatarResponse(
+                avatar_url=user_data.get("avatar_url"),
+                full_avatar_url=user_data.get("full_avatar_url")
+            )
+        except httpx.HTTPStatusError as e:
+            print(f"MAX API error: {e.response.status_code} - {e.response.text}")
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Ошибка получения аватара из MAX: {e.response.text}"
+            )
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Внутренняя ошибка сервера: {str(e)}"
+            )
+
 
 # ========== ОСНОВНОЙ ЭНДПОИНТ ==========
 
