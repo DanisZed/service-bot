@@ -133,49 +133,49 @@ async def get_me(current_master=Depends(get_current_master)):
     )
 
 @router.get("/avatar", response_model=AvatarResponse)
-    async def get_my_avatar(
-        current_master: Master = Depends(get_current_master),
-    ):
-        """
-        Получает URL аватара текущего авторизованного пользователя из MAX API.
-        """
-        max_user_id = current_master.max_user_id
-        max_bot_token = os.getenv("MAX_BOT_TOKEN")  # Используем токен бота-диспетчера
+async def get_my_avatar(    
+    current_master: Master = Depends(get_current_master),
+):
+    """
+    Получает URL аватара текущего авторизованного пользователя из MAX API.
+    """
+    max_user_id = current_master.max_user_id
+    max_bot_token = os.getenv("MAX_BOT_TOKEN")  # Используем токен бота-диспетчера
 
-        if not max_bot_token:
-            raise HTTPException(status_code=500, detail="MAX_BOT_TOKEN не настроен на сервере")
+    if not max_bot_token:
+        raise HTTPException(status_code=500, detail="MAX_BOT_TOKEN не настроен на сервере")
 
-        # Правильный URL для получения пользователя из MAX API
-        max_api_url = f"https://api.max.ru/v1/users/{max_user_id}"
+    # Правильный URL для получения пользователя из MAX API
+    max_api_url = f"https://api.max.ru/v1/users/{max_user_id}"
 
-        headers = {
-            "Authorization": f"Bearer {max_bot_token}",
-            "Content-Type": "application/json"
-        }
+    headers = {
+        "Authorization": f"Bearer {max_bot_token}",
+        "Content-Type": "application/json"
+    }
 
-        async with httpx.AsyncClient() as client:
-            try:
-                # Делаем запрос к API MAX
-                response = await client.get(max_api_url, headers=headers)
-                response.raise_for_status()  # Вызовет исключение для ошибок HTTP
-                user_data = response.json()
+    async with httpx.AsyncClient() as client:
+        try:
+            # Делаем запрос к API MAX
+            response = await client.get(max_api_url, headers=headers)
+            response.raise_for_status()  # Вызовет исключение для ошибок HTTP
+            user_data = response.json()
 
-                # Возвращаем только URL аватаров
-                return AvatarResponse(
-                    avatar_url=user_data.get("avatar_url"),
-                    full_avatar_url=user_data.get("full_avatar_url")
-                )
+            # Возвращаем только URL аватаров
+            return AvatarResponse(
+                avatar_url=user_data.get("avatar_url"),
+                full_avatar_url=user_data.get("full_avatar_url")
+            )
 
-            except httpx.HTTPStatusError as e:
-                # Логируем ошибку и возвращаем её пользователю
-                print(f"MAX API error: {e.response.status_code} - {e.response.text}")
-                raise HTTPException(
-                    status_code=e.response.status_code,
-                    detail=f"Ошибка получения аватара из MAX: {e.response.text}"
-                )
-            except Exception as e:
-                print(f"Unexpected error: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Внутренняя ошибка сервера при запросе к MAX: {str(e)}"
-                )
+        except httpx.HTTPStatusError as e:
+            # Логируем ошибку и возвращаем её пользователю
+            print(f"MAX API error: {e.response.status_code} - {e.response.text}")
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Ошибка получения аватара из MAX: {e.response.text}"
+            )
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Внутренняя ошибка сервера при запросе к MAX: {str(e)}"
+            )
