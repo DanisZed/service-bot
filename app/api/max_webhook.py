@@ -22,6 +22,7 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     sender = message.get("sender") or {}
     body = message.get("body") or {}
 
+    # Логируем всё сообщение целиком
     logger.info("RAW MAX MESSAGE: %r", message)
 
     user_id = sender.get("user_id")
@@ -39,14 +40,14 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
         logger.warning("message_created without user_id: %s", event)
         return
 
-    reply_text = None
-    attachments = None
+    reply_text: Optional[str] = None
+    attachments: Optional[List[dict]] = None
 
-    # Диплинк start=panel -> /panel
+    # 0) Диплинк start=panel -> /panel
     if isinstance(payload, str) and payload.strip().lower() == "panel":
         reply_text, attachments = await handle_command(user_id, "/panel")
 
-    # Диплинк start=activate -> показать кнопку "Начать"
+    # НОВОЕ: диплинк start=activate -> показать кнопку "Начать"
     if reply_text is None and isinstance(payload, str) and payload.strip().lower() == "activate":
         reply_text = (
             "✅ Регистрация завершена.\n\n"
@@ -71,6 +72,7 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
             }
         ]
 
+    # Если ничего не обработано — стандартное приветствие
     if reply_text is None:
         reply_text = (
             "Привет! Я бот Техник Сервис CRM.\n"
