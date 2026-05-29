@@ -1,10 +1,14 @@
 # app/api/me.py
+# app/api/me.py
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+import os
+import httpx
 
 from app.api.deps import get_current_master
 from app.db.session import get_session
+from app.db.models import Master  # ← ДОБАВЬ ЭТУ СТРОКУ
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/me", tags=["me"])
