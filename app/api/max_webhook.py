@@ -138,6 +138,25 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
     if not user_id or not callback_id or payload is None:
         logger.warning("Invalid message_callback event: %s", event)
         return
+    # ========== СОХРАНЯЕМ АВАТАР ==========
+    user_data = event.get("user") or {}
+    avatar_url = user_data.get("full_avatar_url") or user_data.get("avatar_url")
+    
+    logger.info(f"CALLBACK AVATAR DEBUG: user_id={user_id}, avatar_url={avatar_url}")
+    
+    if avatar_url:
+        try:
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(Master).where(Master.max_user_id == user_id)
+                )
+                master = result.scalar_one_or_none()
+                if master and master.avatar_url != avatar_url:
+                    master.avatar_url = avatar_url
+                    await session.commit()
+                    logger.info(f"CALLBACK: Аватар сохранён для user_id={user_id}")
+        except Exception as e:
+            logger.error(f"CALLBACK: Ошибка сохранения аватара: {e}")
 
     # НОВОЕ: обработка кнопки "Начать" после диплинка activate
     if payload == "activate_start":
