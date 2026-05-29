@@ -17,6 +17,28 @@ logger = logging.getLogger(__name__)
 MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"
 
 
+async def handle_message_created(event: Dict[str, Any]) -> None:
+    message = event.get("message") or {}
+    sender = message.get("sender") or {}
+    body = message.get("body") or {}
+
+    # Логируем всё сообщение целиком
+    logger.info("RAW MAX MESSAGE: %r", message)
+
+    user_id = sender.get("user_id")
+    text = body.get("text", "")
+    payload = body.get("payload") or body.get("start_param")
+
+    logger.info(
+        "MY_DEBUG: message from user_id=%s body=%s payload=%s",
+        user_id,
+        text,
+        payload,
+    )
+
+    if not user_id:
+        logger.warning("message_created without user_id: %s", event)
+        return
 # ========== СОХРАНЯЕМ АВАТАР ==========
     user_data = event.get("user") or {}
     avatar_url = user_data.get("full_avatar_url") or user_data.get("avatar_url")
