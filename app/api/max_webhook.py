@@ -9,6 +9,7 @@ from app.services.dialog_service import dialog_service
 from app.services.max_commands import handle_command  # обработка /panel и др.
 from app.db.models import Master
 from sqlalchemy import select
+from app.db.session import AsyncSessionLocal
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
