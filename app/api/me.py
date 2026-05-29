@@ -96,17 +96,16 @@ async def get_my_avatar(
     import httpx
     import os
     
-    max_user_id = current_master.max_user_id
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
     
     if not max_bot_token:
         raise HTTPException(status_code=500, detail="MAX_BOT_TOKEN не настроен")
     
-    # URL для получения пользователя из MAX API
-    max_api_url = f"https://platform-api.max.ru/users/{max_user_id}"
+    # Используем эндпоинт /me для получения информации о текущем пользователе
+    max_api_url = "https://platform-api.max.ru/me"
     
     headers = {
-        "Authorization": f"Bearer {max_bot_token}",
+        "Authorization": max_bot_token,
         "Content-Type": "application/json"
     }
     
@@ -116,6 +115,7 @@ async def get_my_avatar(
             response.raise_for_status()
             user_data = response.json()
             
+            # В ответе /me приходят поля user_id, name, avatar_url и т.д.
             return AvatarResponse(
                 avatar_url=user_data.get("avatar_url"),
                 full_avatar_url=user_data.get("full_avatar_url")
