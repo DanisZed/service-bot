@@ -7,6 +7,8 @@ from app.api.deps import get_current_master
 from app.db.session import get_session
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import Master
+
 router = APIRouter(prefix="/api/me", tags=["me"])
 
 # --- Вспомогательная модель для ответа ---
