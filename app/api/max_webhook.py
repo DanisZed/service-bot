@@ -8,6 +8,7 @@ from max_client import MaxClient
 from app.services.dialog_service import dialog_service
 from app.services.max_commands import handle_command  # обработка /panel и др.
 from app.db.models import Master
+from app.db.session import AsyncSessionLocal
 from sqlalchemy import select
 
 router = APIRouter()
@@ -38,6 +39,19 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     if not user_id:
         logger.warning("message_created without user_id: %s", event)
         return
+        # ========== СОХРАНЯЕМ АВАТАР ==========
+    user_data = event.get("user") or {}
+    avatar_url = user_data.get("full_avatar_url") or user_data.get("avatar_url")
+    
+    if avatar_url:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id)
+            )
+            master = result.scalar_one_or_none()
+            if master and master.avatar_url != avatar_url:
+                master.avatar_url = avatar_url
+                await session.commit()
 
     reply_text: Optional[str] = None
     attachments: Optional[List[dict]] = None
