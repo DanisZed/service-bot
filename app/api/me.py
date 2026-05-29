@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Master
 
+import os
+import httpx
+
 router = APIRouter(prefix="/api/me", tags=["me"])
 
 # --- Вспомогательная модель для ответа ---
