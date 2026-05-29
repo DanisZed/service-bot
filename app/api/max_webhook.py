@@ -9,7 +9,6 @@ from app.services.dialog_service import dialog_service
 from app.services.max_commands import handle_command  # обработка /panel и др.
 from app.db.models import Master
 from sqlalchemy import select
-from app.db.session import AsyncSessionLocal
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -72,13 +71,19 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
             }
         ]
 
-    # Если ничего не обработано — стандартное приветствие
+    # 1) Если диплинк не сработал или payload другой — пробуем обычную команду
     if reply_text is None:
-        reply_text = (
-            "Привет! Я бот Техник Сервис CRM.\n"
-            "Чтобы открыть панель мастера, отправьте команду /panel."
-        )
-        attachments = None
+        reply_text, attachments = await handle_command(user_id, text)
+
+    # 2) Если команда не распознана — идём в диалоговый сервис
+    if reply_text is None:
+        lower = text.strip().lower()
+        if lower in ("/start", "новая заявка", "заявка"):
+            reply_text, attachments = await dialog_service.start_or_reset(user_id)
+        else:
+            reply_text, attachments = await dialog_service.handle_message(
+                user_id, text
+            )
 
     client = MaxClient()
     try:
