@@ -154,9 +154,9 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
                 if master and master.avatar_url != avatar_url:
                     master.avatar_url = avatar_url
                     await session.commit()
-                    logger.info(f"CALLBACK: Аватар сохранён для user_id={user_id}")
+                    logger.info(f"Аватар сохранён для user_id={user_id}")
         except Exception as e:
-            logger.error(f"CALLBACK: Ошибка сохранения аватара: {e}")
+            logger.error(f"Ошибка сохранения аватара: {e}")
 
     # НОВОЕ: обработка кнопки "Начать" после диплинка activate
     if payload == "activate_start":
