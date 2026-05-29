@@ -22,49 +22,31 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     sender = message.get("sender") or {}
     body = message.get("body") or {}
 
-    # Логируем всё сообщение целиком
     logger.info("RAW MAX MESSAGE: %r", message)
 
     user_id = sender.get("user_id")
     text = body.get("text", "")
     payload = body.get("payload") or body.get("start_param")
-    
-    # Получаем данные пользователя из события
-    user_data = event.get("user") or {}
-    avatar_url = user_data.get("full_avatar_url") or user_data.get("avatar_url")
 
     logger.info(
-        "MY_DEBUG: message from user_id=%s body=%s payload=%s avatar=%s",
+        "MY_DEBUG: message from user_id=%s body=%s payload=%s",
         user_id,
         text,
         payload,
-        avatar_url,
     )
 
     if not user_id:
         logger.warning("message_created without user_id: %s", event)
         return
 
-    # ========== СОХРАНЯЕМ ТОЛЬКО АВАТАР В БД (НЕ ТРОГАЕМ ИМЯ) ==========
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(Master).where(Master.max_user_id == user_id)
-        )
-        master = result.scalar_one_or_none()
-        
-        if master and avatar_url and master.avatar_url != avatar_url:
-            master.avatar_url = avatar_url
-            await session.commit()
-            logger.info(f"Updated avatar for user {user_id}")
+    reply_text = None
+    attachments = None
 
-    reply_text: Optional[str] = None
-    attachments: Optional[List[dict]] = None
-
-    # 0) Диплинк start=panel -> /panel
+    # Диплинк start=panel -> /panel
     if isinstance(payload, str) and payload.strip().lower() == "panel":
         reply_text, attachments = await handle_command(user_id, "/panel")
 
-    # НОВОЕ: диплинк start=activate -> показать кнопку "Начать"
+    # Диплинк start=activate -> показать кнопку "Начать"
     if reply_text is None and isinstance(payload, str) and payload.strip().lower() == "activate":
         reply_text = (
             "✅ Регистрация завершена.\n\n"
@@ -88,38 +70,13 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
                 },
             }
         ]
-    
-    # Если ничего не обработано — стандартное приветствие
+
     if reply_text is None:
         reply_text = (
             "Привет! Я бот Техник Сервис CRM.\n"
             "Чтобы открыть панель мастера, отправьте команду /panel."
         )
         attachments = None
-
-    client = MaxClient()
-    try:
-        await client.send_text_to_user(
-            user_id=user_id,
-            text=reply_text,
-            attachments=attachments,
-        )
-    finally:
-        await client.close()
-
-    # 1) Если диплинк не сработал или payload другой — пробуем обычную команду
-    if reply_text is None:
-        reply_text, attachments = await handle_command(user_id, text)
-
-    # 2) Если команда не распознана — идём в диалоговый сервис
-    if reply_text is None:
-        lower = text.strip().lower()
-        if lower in ("/start", "новая заявка", "заявка"):
-            reply_text, attachments = await dialog_service.start_or_reset(user_id)
-        else:
-            reply_text, attachments = await dialog_service.handle_message(
-                user_id, text
-            )
 
     client = MaxClient()
     try:
