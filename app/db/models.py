@@ -109,6 +109,8 @@ class Master(Base):
     phone = Column(String(32), nullable=True)
     email = Column(String(255), nullable=True)
 
+    avatar_url = Column(Text, nullable=True)
+
     plan = Column(String(32), nullable=False, default="free")
     is_active = Column(Integer, nullable=False, default=1)
 
