@@ -103,7 +103,7 @@ async def get_my_avatar(
         raise HTTPException(status_code=500, detail="MAX_BOT_TOKEN не настроен")
     
     # URL для получения пользователя из MAX API
-    max_api_url = f"https://api.max.ru/v1/users/{max_user_id}"
+    max_api_url = f"https://platform-api.max.ru/users/{max_user_id}"
     
     headers = {
         "Authorization": f"Bearer {max_bot_token}",
