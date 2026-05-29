@@ -209,6 +209,19 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
         payload,
         event,
     )
+        # ========== СОХРАНЯЕМ АВАТАР ==========
+    avatar_url = user.get("full_avatar_url") or user.get("avatar_url")
+    
+    if avatar_url and user_id:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(Master).where(Master.max_user_id == user_id)
+            )
+            master = result.scalar_one_or_none()
+            if master and master.avatar_url != avatar_url:
+                master.avatar_url = avatar_url
+                await session.commit()
+                print(f"✅ Аватар сохранён для {user_id}")
 
     if not user_id:
         logger.warning("bot_started without user_id: %s", event)
