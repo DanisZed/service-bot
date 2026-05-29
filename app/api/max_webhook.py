@@ -17,41 +17,36 @@ logger = logging.getLogger(__name__)
 MAX_WEBHOOK_SECRET = "danis_super_secret_key_1"
 
 
-async def handle_message_created(event: Dict[str, Any]) -> None:
-    message = event.get("message") or {}
-    sender = message.get("sender") or {}
-    body = message.get("body") or {}
-
-    # Логируем всё сообщение целиком
-    logger.info("RAW MAX MESSAGE: %r", message)
-
-    user_id = sender.get("user_id")
-    text = body.get("text", "")
-    payload = body.get("payload") or body.get("start_param")
-
-    logger.info(
-        "MY_DEBUG: message from user_id=%s body=%s payload=%s",
-        user_id,
-        text,
-        payload,
-    )
-
-    if not user_id:
-        logger.warning("message_created without user_id: %s", event)
-        return
-        # ========== СОХРАНЯЕМ АВАТАР ==========
+# ========== СОХРАНЯЕМ АВАТАР ==========
     user_data = event.get("user") or {}
     avatar_url = user_data.get("full_avatar_url") or user_data.get("avatar_url")
     
+    logger.info(f"AVATAR DEBUG: user_id={user_id}, avatar_url={avatar_url}, user_data={user_data}")
+    
     if avatar_url:
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id)
-            )
-            master = result.scalar_one_or_none()
-            if master and master.avatar_url != avatar_url:
-                master.avatar_url = avatar_url
-                await session.commit()
+        logger.info(f"AVATAR DEBUG: Найден аватар для user_id={user_id}, сохраняем...")
+        try:
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(Master).where(Master.max_user_id == user_id)
+                )
+                master = result.scalar_one_or_none()
+                logger.info(f"AVATAR DEBUG: Мастер найден: {master is not None}")
+                
+                if master:
+                    logger.info(f"AVATAR DEBUG: Текущий avatar_url={master.avatar_url}, новый={avatar_url}")
+                    if master.avatar_url != avatar_url:
+                        master.avatar_url = avatar_url
+                        await session.commit()
+                        logger.info(f"AVATAR DEBUG: Аватар успешно сохранён для user_id={user_id}")
+                    else:
+                        logger.info(f"AVATAR DEBUG: Аватар не изменился, пропускаем")
+                else:
+                    logger.warning(f"AVATAR DEBUG: Мастер с user_id={user_id} не найден")
+        except Exception as e:
+            logger.error(f"AVATAR DEBUG: Ошибка при сохранении аватара: {e}")
+    else:
+        logger.info(f"AVATAR DEBUG: avatar_url не найден в user_data для user_id={user_id}")
 
     reply_text: Optional[str] = None
     attachments: Optional[List[dict]] = None
