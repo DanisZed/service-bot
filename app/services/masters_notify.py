@@ -11,7 +11,7 @@ from max_client import MaxClient
 
 logger = logging.getLogger(__name__)
 
-MAX_SECOND_BOT_TOKEN = os.getenv("MAX_SECOND_BOT_TOKEN")
+MAX_ORDER_BOT_TOKEN = os.getenv("MAX_ORDER_BOT_TOKEN")
 
 # Словарь (можно вынести в начало файла или импортировать)
 SUBTYPE_NAMES = {
@@ -215,7 +215,7 @@ async def notify_master_request_created(request_id: int) -> None:
 
         logger.info(f"notify_master_request_created: sending to master {master.max_user_id}")
 
-        client = MaxClient(token=MAX_SECOND_BOT_TOKEN)
+        client = MaxClient(token=MAX_ORDER_BOT_TOKEN)
         try:
             resp = await client.send_text_to_user(
                 user_id=master.max_user_id,
