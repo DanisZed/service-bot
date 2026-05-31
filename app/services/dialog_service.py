@@ -603,6 +603,8 @@ class UnifiedDialogService:
 
             ctx.request_id = req.id
 
+            await notify_master_request_created(req.id)
+
             # Кнопка для новой заявки
             kb = self._inline_keyboard([[
                 {
@@ -618,6 +620,7 @@ class UnifiedDialogService:
             return reply, kb
 
         return await self.show_main_menu(user_id)  
+
     async def cancel_request(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Отменяет текущую заявку и предлагает создать новую"""
         self.reset(user_id)
