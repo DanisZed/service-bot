@@ -111,14 +111,6 @@ class UnifiedDialogService:
             if not master:
                 return "❌ Ошибка: пользователь не найден. Пройдите регистрацию заново.", None
         
-        # Формируем обращение
-        if master.name:
-            greeting = f"{master.name} {master.lastname or ''}".strip()
-        elif master.service_name:
-            greeting = master.service_name
-        else:
-            greeting = "пользователь"
-        
         kb = self._inline_keyboard([[
             {
                 "type": "callback",
@@ -129,7 +121,7 @@ class UnifiedDialogService:
         ]])
         
         text = (
-            f"👋 Добро пожаловать, {greeting}!\n\n"
+            f"👋 Добро пожаловать, {master.name or master.service_name or 'пользователь'}!\n\n"
             f"Нажмите кнопку или введите /start, чтобы оформить заявку."
         )
         
@@ -411,8 +403,8 @@ class UnifiedDialogService:
             text = (
                 f"Записал: {ctx.service_title}.\n"
                 "Где выполнить услугу?\n"
-                "— Нажми «Мастерская», если клиент привезет сам\n"
-                "— Нажми «Ввести адрес», чтобы ввести адрес\n"
+                "— Нажми «Мастерская», если привезёшь сам\n"
+                "— Нажми «Ввести адрес», чтобы ввести адрес вручную\n"
                 "Или просто отправь адрес текстом."
             )
             return text, self._buttons_address_mode()
@@ -429,13 +421,13 @@ class UnifiedDialogService:
 
         if payload == "address_mode:enter_address" and ctx.state == DialogState.ADDRESS_MODE:
             ctx.state = DialogState.ADDRESS
-            return "Хорошо, введи, пожалуйста, полный адрес (город, улица, дом).", None
+            return "Хорошо, введи, пожалуйста, полный адрес (улица, дом, город).", None
 
         if payload == "address_details:private_house" and ctx.state == DialogState.ADDRESS_DETAILS:
             ctx.address_details = None
             ctx.state = DialogState.DESCRIPTION
             return (
-                "Принял. Теперь напиши причину обращения (детально).",
+                "Принял. Теперь опиши, пожалуйста, что нужно сделать (детально).",
                 None,
             )
 
@@ -457,7 +449,7 @@ class UnifiedDialogService:
             except ValueError:
                 ctx.slot = rest
                 ctx.state = DialogState.NAME
-                return "Введи имя контактного лица", None
+                return "Ок. Как к тебе обращаться?", None
 
             booked = await self._get_booked_slots_for_date(date_part)
             payload_full = f"slot_time:{date_part}:{time_part}"
@@ -469,7 +461,7 @@ class UnifiedDialogService:
 
             ctx.slot = time_part
             ctx.state = DialogState.NAME
-            return "Введи имя контактного лица", None
+            return "Ок. Как к тебе обращаться?", None
 
         return (
             "Команда уже не актуальна. Напиши, пожалуйста, текстом, что хочешь сделать.",
@@ -478,9 +470,10 @@ class UnifiedDialogService:
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка текстовых сообщений"""
-        
+    
         # Сначала проверяем, есть ли активная сессия регистрации
         if registration_service.is_in_registration(user_id):
+            # Если пользователь в процессе регистрации — передаем туда
             return await registration_service.handle_message(user_id, text)
         
         # Проверяем, зарегистрирован ли пользователь
@@ -491,6 +484,7 @@ class UnifiedDialogService:
             master = result.scalar_one_or_none()
         
         if not master:
+            # Начинаем регистрацию
             return await registration_service.start_registration(user_id)
         
         ctx = self._get_ctx(user_id)
@@ -498,7 +492,8 @@ class UnifiedDialogService:
         text_lower = text_clean.lower()
 
         if text_lower in ("/cancel", "отмена", "стоп"):
-            return await self.cancel_request(user_id)
+            self.reset(user_id)
+            return await self.show_main_menu(user_id)
 
         if text_lower in ("/start", "новая заявка", "заявка"):
             self.reset(user_id)
@@ -509,8 +504,8 @@ class UnifiedDialogService:
             ctx.state = DialogState.ADDRESS_DETAILS
             return (
                 "Адрес записал.\n"
-                "Уточни квартиру, этаж и подъезд. Например, кв1 п2 эт3\n"
-                "Если это частный дом, то нажми «Частный дом».",
+                "Уточни, пожалуйста, квартиру и подъезд.\n"
+                "Если это частный дом, нажми «Частный дом» или напиши эти слова.",
                 self._buttons_private_house(),
             )
 
@@ -519,8 +514,8 @@ class UnifiedDialogService:
             ctx.state = DialogState.ADDRESS_DETAILS
             return (
                 "Адрес записал.\n"
-                "Уточни квартиру, этаж и подъезд. Например, кв1 п2 эт3\n"
-                "Если это частный дом, то нажми «Частный дом».",
+                "Уточни, пожалуйста, квартиру и подъезд.\n"
+                "Если это частный дом, нажми «Частный дом» или напиши эти слова.",
                 self._buttons_private_house(),
             )
 
@@ -530,13 +525,14 @@ class UnifiedDialogService:
             else:
                 ctx.address_details = text_clean
             ctx.state = DialogState.DESCRIPTION
-            return "Принял. Теперь напиши причину обращения (детально).", None
+            return "Принял. Теперь опиши, пожалуйста, что нужно сделать (детально).", None
 
         if ctx.state == DialogState.DESCRIPTION:
             ctx.description = text_clean
             ctx.state = DialogState.SLOT
             return (
-                "Принял описание. Когда удобно выполнить услугу?\n",
+                "Принял описание. Когда удобно выполнить услугу?\n"
+                "Можешь выбрать один из ближайших дней ниже или написать дату и время текстом.",
                 self._buttons_slot_dates(),
             )
 
@@ -545,12 +541,12 @@ class UnifiedDialogService:
             ctx.date = None
             ctx.slot = text_clean
             ctx.state = DialogState.NAME
-            return "Введи имя контактного лица", None
+            return "Ок. Как к тебе обращаться?", None
 
         if ctx.state == DialogState.NAME:
             ctx.name = text_clean
             ctx.state = DialogState.PHONE
-            return "Введи номер контактного лица.", None
+            return "Спасибо. Оставь, пожалуйста, номер телефона для связи (мобильный).", None
 
         if ctx.state == DialogState.PHONE:
             normalized = self._normalize_phone(text_clean)
@@ -603,43 +599,97 @@ class UnifiedDialogService:
 
             ctx.request_id = req.id
 
+            await self._send_application_to_channel(user_id, ctx)
             await notify_master_request_created(req.id)
 
-            # Кнопка для новой заявки
-            kb = self._inline_keyboard([[
-                {
-                    "type": "callback",
-                    "text": "Новая заявка",
-                    "payload": "menu:new_request",
-                    "intent": "default",
-                }
-            ]])
-
-            reply = f"✅ Заявка №{req.id} успешно создана!\n\nНажмите на кнопку, чтобы создать новую."
+            reply = f"✅ Спасибо, заявка №{req.id} создана! Мастер скоро свяжется с вами."
             self.reset(user_id)
-            return reply, kb
+            return reply, None
 
-        return await self.show_main_menu(user_id)  
+        return await self.show_main_menu(user_id)
 
-    async def cancel_request(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
-        """Отменяет текущую заявку и предлагает создать новую"""
-        self.reset(user_id)
-        
-        # Кнопка для новой заявки
-        kb = self._inline_keyboard([[
-            {
-                "type": "callback",
-                "text": "Создать новую заявку",
-                "payload": "menu:new_request",
-                "intent": "default",
-            }
-        ]])
-        
-        text = (
-            "❌ Заявка отменена.\n\n"
-            "Вы можете создать новую заявку, нажав на кнопку ниже."
+    async def _send_application_to_channel(self, user_id: int, ctx: DialogContext) -> None:
+        """Отправляет заявку в общий канал"""
+        request_no = ctx.request_id if ctx.request_id is not None else "—"
+        created_at = datetime.now().strftime("%d.%m.%y")
+        lines = [f"📝 Заявка № {request_no} от {created_at}"]
+
+        if user_id != MY_USER_ID:
+            lines.append(f"👤 Пользователь ID: {user_id}")
+
+        lines.append(f"🔧 Услуга: {ctx.service_title or ctx.subtype or '—'}")
+
+        if ctx.address == "Мастерская":
+            lines.append("🏭 Место выполнения: мастерская")
+        elif ctx.address:
+            lines.append(f"📍 Адрес: {ctx.address}")
+        else:
+            lines.append("📍 Адрес: не указан")
+
+        if ctx.address_details:
+            lines.append(f"📌 Уточнение по адресу: {ctx.address_details}")
+
+        if ctx.date:
+            lines.append(f"📅 Дата: {ctx.date}")
+        if ctx.slot:
+            lines.append(f"⏰ Время/слот: {ctx.slot}")
+
+        lines.append(f"📄 Описание: {ctx.description or '—'}")
+        lines.append(f"🙋‍♂️ Имя: {ctx.name or '—'}")
+        lines.append(f"📞 Телефон: {ctx.phone or '—'}")
+
+        text = "\n".join(lines)
+
+        yandex_url = self._build_yandex_url(ctx.address)
+        google_url = self._build_google_calendar_url(
+            order_no=ctx.request_id,
+            date_iso=ctx.date_iso,
+            time_slot=ctx.slot,
+            address=ctx.address,
+            address_details=ctx.address_details,
+            comment=ctx.description,
+            phone=ctx.phone,
         )
-        
-        return text, kb
+
+        buttons_rows: List[List[dict]] = []
+        if yandex_url:
+            buttons_rows.append(
+                [
+                    {
+                        "type": "link",
+                        "text": "Проложить маршрут (Яндекс)",
+                        "url": yandex_url,
+                    }
+                ]
+            )
+
+        if google_url:
+            buttons_rows.append(
+                [
+                    {
+                        "type": "link",
+                        "text": "Добавить в Google Календарь",
+                        "url": google_url,
+                    }
+                ]
+            )
+
+        attachments = None
+        if buttons_rows:
+            attachments = [
+                {
+                    "type": "inline_keyboard",
+                    "payload": {"buttons": buttons_rows},
+                }
+            ]
+
+        client = MaxClient()
+        await client.send_text_to_chat(
+            chat_id=MAX_APPLICATIONS_CHAT_ID,
+            text=text,
+            attachments=attachments,
+        )
+        await client.close()
+
 
 dialog_service = UnifiedDialogService()
