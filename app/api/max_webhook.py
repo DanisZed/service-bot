@@ -72,29 +72,7 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
         ]
     # В handle_message_created, после получения text:
 
-    if text == "/debug":
-        # Получаем информацию о пользователе из MAX API
-        import httpx
-        import os
-        
-        max_bot_token = os.getenv("MAX_BOT_TOKEN")
-        max_api_url = "https://platform-api.max.ru/me"
-        
-        headers = {
-            "Authorization": max_bot_token,
-            "Content-Type": "application/json"
-        }
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.get(max_api_url, headers=headers)
-            user_data = response.json()
-        
-        # Отправляем в консоль сервера
-        print(f"\n🔍 DEBUG MAX USER INFO: {user_data}\n")
-        
-        # И пользователю
-        reply_text = f"✅ Информация о боте отправлена в консоль сервера.\n```json\n{user_data}\n```"
-        attachments = None    
+      
 
     # 1) Если диплинк не сработал или payload другой — пробуем обычную команду
     if reply_text is None:
