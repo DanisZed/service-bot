@@ -9,7 +9,7 @@ from app.db.session import get_session
 from app.db.models import Master
 from app.api.deps import get_current_master
 
-router = APIRouter(prefix="/api/manage-master", tags=["manage_master"])
+router = APIRouter(prefix="/api/service", tags=["service"])
 
 
 # ========== СХЕМЫ ==========
@@ -42,7 +42,7 @@ class ClearServiceResponse(BaseModel):
 
 # ========== ЭНДПОИНТЫ ==========
 
-@router.get("/service/{service_id}/masters", response_model=List[LinkedMasterOut])
+@router.get("/{service_id}/masters", response_model=List[LinkedMasterOut])
 async def get_service_masters(
     service_id: str,
     current_master: Master = Depends(get_current_master),
@@ -88,7 +88,7 @@ async def get_service_masters(
     ]
 
 
-@router.post("/service/{service_id}/masters", response_model=AddMasterResponse)
+@router.post("/{service_id}/masters", response_model=AddMasterResponse)
 async def add_master_to_service(
     service_id: str,
     request: AddMasterRequest,
