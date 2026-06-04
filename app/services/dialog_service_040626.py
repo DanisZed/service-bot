@@ -15,7 +15,7 @@ from app.services.devices import list_categories, list_subtypes_by_category
 from app.services.masters_notify import notify_master_request_created
 from app.services.registration_service import registration_service
 
-from app.db.models import Master, ServiceRequest
+from app.db.models import Master
 
 from sqlalchemy import select
 
@@ -204,21 +204,8 @@ class UnifiedDialogService:
             ]]
         )
 
-    async def _get_booked_slots_for_date(self, master_id: int, date_str: str) -> set[str]:
-        """Возвращает множество занятых временных слотов для мастера на указанную дату"""
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(ServiceRequest.time_slot).where(
-                    ServiceRequest.master_id == master_id,
-                    ServiceRequest.date_iso == date_str,
-                    ServiceRequest.status.in_(["new", "in_work", "confirmed"])
-                )
-            )
-            booked_slots = set()
-            for row in result:
-                if row[0]:
-                    booked_slots.add(f"slot_time:{date_str}:{row[0]}")
-            return booked_slots
+    async def _get_booked_slots_for_date(self, date_str: str) -> set[str]:
+        return set()
 
     def _build_slot_date_options(self) -> List[dict]:
         today = datetime.now().date()
@@ -265,34 +252,20 @@ class UnifiedDialogService:
 
         return self._inline_keyboard(rows)
 
-    async def _buttons_time_slots(self, master_id: int, date_str: str) -> List[dict]:
-        """Показывает кнопки с временными слотами, помечая занятые"""
-        booked = await self._get_booked_slots_for_date(master_id, date_str)
+    async def _buttons_time_slots(self, date_str: str) -> List[dict]:
+        booked = await self._get_booked_slots_for_date(date_str)
         buttons: List[dict] = []
         for start, end in TIME_SLOTS:
-            time_slot = f"{start}-{end}"
-            payload = f"slot_time:{date_str}:{time_slot}"
-            # Проверяем, занят ли слот
-            if payload in booked:
-                text = "🔴 ЗАНЯТО"
-                buttons.append(
-                    {
-                        "type": "callback",
-                        "text": text,
-                        "payload": payload,
-                        "intent": "default",
-                    }
-                )
-            else:
-                text = f"{start}-{end}"
-                buttons.append(
-                    {
-                        "type": "callback",
-                        "text": text,
-                        "payload": payload,
-                        "intent": "default",
-                    }
-                )
+            payload = f"slot_time:{date_str}:{start}-{end}"
+            text = "ЗАНЯТО" if payload in booked else f"{start}-{end}"
+            buttons.append(
+                {
+                    "type": "callback",
+                    "text": text,
+                    "payload": payload,
+                    "intent": "default",
+                }
+            )
         rows: List[List[dict]] = []
         for i in range(0, len(buttons), 3):
             rows.append(buttons[i : i + 3])
@@ -472,18 +445,9 @@ class UnifiedDialogService:
             ctx.date = self._format_pretty_date(date_str)
             ctx.slot = None
             ctx.state = DialogState.SLOT_TIME
-            
-            # Получаем master_id
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(
-                    select(Master).where(Master.max_user_id == user_id)
-                )
-                master = result.scalar_one_or_none()
-                master_id = master.id if master else None
-            
             return (
                 f"Выбери удобное время для {ctx.date}:",
-                await self._buttons_time_slots(master_id, date_str),
+                await self._buttons_time_slots(date_str),
             )
 
         if payload.startswith("slot_time:") and ctx.state == DialogState.SLOT_TIME:
@@ -495,21 +459,12 @@ class UnifiedDialogService:
                 ctx.state = DialogState.NAME
                 return "Введи имя контактного лица", None
 
-            # Получаем master_id
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(
-                    select(Master).where(Master.max_user_id == user_id)
-                )
-                master = result.scalar_one_or_none()
-                master_id = master.id if master else None
-            
-            # Проверяем, не занят ли слот
-            booked = await self._get_booked_slots_for_date(master_id, date_part)
+            booked = await self._get_booked_slots_for_date(date_part)
             payload_full = f"slot_time:{date_part}:{time_part}"
             if payload_full in booked:
                 return (
                     "Увы, этот слот уже занят. Выбери, пожалуйста, другой:",
-                    await self._buttons_time_slots(master_id, date_part),
+                    await self._buttons_time_slots(date_part),
                 )
 
             ctx.slot = time_part
@@ -686,6 +641,5 @@ class UnifiedDialogService:
         )
         
         return text, kb
-
 
 dialog_service = UnifiedDialogService()
