@@ -4,11 +4,13 @@ from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from app.db.session import get_session
 from app.db.models import Master
 from app.api.deps import get_current_master
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/service", tags=["service"])
 
 
@@ -66,11 +68,13 @@ async def get_service_masters(
             detail="Доступ запрещён"
         )
     
-    # Находим всех мастеров с таким service_id (не админов)
+    # Находим всех мастеров с таким service_id (включая админов, если нужно)
+    # Но для списка подчинённых лучше исключить самого админа
     result = await db.execute(
         select(Master).where(
             Master.service_id == service_id,
-            Master.is_admin == 0
+            Master.is_admin == 0,  # только обычные мастера
+            Master.id != current_master.id  # исключаем самого админа на всякий случай
         )
     )
     masters = result.scalars().all()
@@ -99,65 +103,79 @@ async def add_master_to_service(
     Добавить мастера в сервисный центр по его master_id
     Только для администраторов сервиса
     """
-    # Проверяем, что текущий пользователь - админ
-    if current_master.is_admin != 1:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Только администратор может добавлять мастеров"
+    try:
+        logger.info(f"Попытка добавления мастера: {request.master_id} в сервис {service_id}")
+        
+        # Проверяем, что текущий пользователь - админ
+        if current_master.is_admin != 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Только администратор может добавлять мастеров"
+            )
+        
+        # Проверяем, что админ имеет доступ к этому сервису
+        if current_master.service_id != service_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Доступ запрещён"
+            )
+        
+        # Находим мастера по master_id
+        result = await db.execute(
+            select(Master).where(Master.master_id == request.master_id)
         )
-    
-    # Проверяем, что админ имеет доступ к этому сервису
-    if current_master.service_id != service_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Доступ запрещён"
+        target_master = result.scalar_one_or_none()
+        
+        if not target_master:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Мастер с ID {request.master_id} не найден"
+            )
+        
+        # Проверяем, что мастер не админ
+        if target_master.is_admin == 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Нельзя добавить администратора в качестве мастера"
+            )
+        
+        # Проверяем, что мастер не привязан к другому сервису
+        if target_master.service_id and target_master.service_id != service_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Мастер уже привязан к сервису {target_master.service_name}"
+            )
+        
+        # Привязываем мастера к сервису
+        target_master.service_id = request.service_id
+        target_master.service_name = request.service_name
+        
+        await db.commit()
+        await db.refresh(target_master)
+        
+        logger.info(f"Мастер {target_master.id} успешно добавлен в сервис {service_id}")
+        
+        return AddMasterResponse(
+            success=True,
+            message="Мастер успешно добавлен в сервисный центр",
+            master={
+                "id": target_master.id,
+                "master_id": target_master.master_id,
+                "name": target_master.name,
+                "lastname": target_master.lastname,
+                "phone": target_master.phone,
+                "email": target_master.email,
+            }
         )
-    
-    # Находим мастера по master_id
-    result = await db.execute(
-        select(Master).where(Master.master_id == request.master_id)
-    )
-    target_master = result.scalar_one_or_none()
-    
-    if not target_master:
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении мастера: {e}")
+        await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Мастер с ID {request.master_id} не найден"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Внутренняя ошибка сервера: {str(e)}"
         )
-    
-    # Проверяем, что мастер не админ
-    if target_master.is_admin == 1:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Нельзя добавить администратора в качестве мастера"
-        )
-    
-    # Проверяем, что мастер не привязан к другому сервису
-    if target_master.service_id and target_master.service_id != service_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Мастер уже привязан к сервису {target_master.service_name}"
-        )
-    
-    # Привязываем мастера к сервису
-    target_master.service_id = request.service_id
-    target_master.service_name = request.service_name
-    
-    await db.commit()
-    await db.refresh(target_master)
-    
-    return AddMasterResponse(
-        success=True,
-        message="Мастер успешно добавлен в сервисный центр",
-        master={
-            "id": target_master.id,
-            "master_id": target_master.master_id,
-            "name": target_master.name,
-            "lastname": target_master.lastname,
-            "phone": target_master.phone,
-            "email": target_master.email,
-        }
-    )
 
 
 @router.patch("/masters/{master_id}/clear-service", response_model=ClearServiceResponse)
