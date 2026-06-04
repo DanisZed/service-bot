@@ -64,6 +64,7 @@ class ServiceRequest(Base):
 
     service_title = Column(Text, nullable=True)
     problem_description = Column(Text, nullable=False)
+    what_was_done = Column(Text, nullable=False)
 
     location_type = Column(String(32), nullable=False)
     address = Column(Text, nullable=True)
@@ -103,7 +104,7 @@ class Master(Base):
     master_id = Column(String(12), unique=True, nullable=True)      # МСТР + 7 цифр
     lastname = Column(Text, nullable=True)                          # фамилия
     service_name = Column(Text, nullable=True)                      # название сервиса (для админа)
-    service_id = Column(String(64), nullable=True)                  # ← ДОБАВИТЬ ЭТУ СТРОКУ
+    service_id = Column(String(10), unique=True, nullable=True)  # СРВС123456
     is_admin = Column(Integer, nullable=False, default=0)           # 1 - админ, 0 - мастер
 
     name = Column(Text, nullable=True)
