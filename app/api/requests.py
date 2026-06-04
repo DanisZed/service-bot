@@ -42,6 +42,7 @@ class ServiceRequestOut(BaseModel):
 
     # Описание поломки
     problem_description: str
+    what_was_done: Optional[str] = None  # ← ДОБАВИТЬ
 
     # Дата/время выезда
     date_iso: Optional[date] = None
@@ -75,8 +76,12 @@ class ServiceRequestUpdate(BaseModel):
     payment_status: Optional[str] = None
     paid_amount: Optional[float] = None
     paid_at: Optional[datetime] = None
-    # ДОБАВИТЬ:
+    
+    # Источник
     source: Optional[str] = None
+    
+    # Выполненные работы ← ДОБАВИТЬ
+    what_was_done: Optional[str] = None
 
 
 @router.get("", response_model=List[ServiceRequestOut])
@@ -148,9 +153,12 @@ async def update_service_request(
         obj.paid_amount = payload.paid_amount
     if payload.paid_at is not None:
         obj.paid_at = payload.paid_at
-        # ДОБАВИТЬ:
     if payload.source is not None:
         obj.source = payload.source
+    
+    # ← ДОБАВИТЬ ОБНОВЛЕНИЕ ВЫПОЛНЕННЫХ РАБОТ
+    if payload.what_was_done is not None:
+        obj.what_was_done = payload.what_was_done
 
     await db.commit()
     await db.refresh(obj)
