@@ -42,7 +42,7 @@ class ServiceRequestOut(BaseModel):
 
     # Описание поломки
     problem_description: str
-    what_was_done: Optional[str] = None  # ← ДОБАВИТЬ
+    what_was_done: Optional[str] = None
 
     # Дата/время выезда
     date_iso: Optional[date] = None
@@ -61,9 +61,14 @@ class ServiceRequestOut(BaseModel):
     source: str
     yandex_url: Optional[str] = None
     google_url: Optional[str] = None
+    
+    # Даты статусов
+    done_at: Optional[datetime] = None      # ← ДОБАВИТЬ
+    cancelled_at: Optional[datetime] = None # ← ДОБАВИТЬ
+    in_work_at: Optional[datetime] = None   # ← ДОБАВИТЬ
 
     class Config:
-        from_attributes = True  # Pydantic v2
+        from_attributes = True
 
 
 class ServiceRequestUpdate(BaseModel):
@@ -80,7 +85,7 @@ class ServiceRequestUpdate(BaseModel):
     # Источник
     source: Optional[str] = None
     
-    # Выполненные работы ← ДОБАВИТЬ
+    # Выполненные работы
     what_was_done: Optional[str] = None
 
 
@@ -137,16 +142,34 @@ async def update_service_request(
     if not obj or obj.master_id != current_master.id:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    # если пришёл статус canceled — сразу обнуляем total_amount
-    if payload.status == "canceled":
-        obj.total_amount = 0
+    # ========== ОБРАБОТКА СМЕНЫ СТАТУСА С ПРОСТАНОВКОЙ ДАТ ==========
+    if payload.status is not None and payload.status != obj.status:
+        old_status = obj.status
+        new_status = payload.status
+        now = datetime.utcnow()
+        
+        # Если статус меняется на "in_work" (В работе)
+        if new_status == "in_work" and old_status != "in_work":
+            obj.in_work_at = now
+        
+        # Если статус меняется на "done" (Завершена)
+        if new_status == "done" and old_status != "done":
+            obj.done_at = now
+            # Если не было отметки "в работе", ставим её тоже
+            if not obj.in_work_at:
+                obj.in_work_at = now
+        
+        # Если статус меняется на "canceled" (Отменена)
+        if new_status == "canceled" and old_status != "canceled":
+            obj.cancelled_at = now
+            obj.total_amount = 0  # обнуляем сумму при отмене
+        
+        obj.status = new_status
 
     # если пришла новая сумма — обновляем
     if payload.total_amount is not None:
         obj.total_amount = payload.total_amount
 
-    if payload.status is not None:
-        obj.status = payload.status
     if payload.payment_status is not None:
         obj.payment_status = payload.payment_status
     if payload.paid_amount is not None:
@@ -155,8 +178,6 @@ async def update_service_request(
         obj.paid_at = payload.paid_at
     if payload.source is not None:
         obj.source = payload.source
-    
-    # ← ДОБАВИТЬ ОБНОВЛЕНИЕ ВЫПОЛНЕННЫХ РАБОТ
     if payload.what_was_done is not None:
         obj.what_was_done = payload.what_was_done
 
