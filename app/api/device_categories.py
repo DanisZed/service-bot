@@ -69,25 +69,48 @@ async def get_categories(
     current_master=Depends(get_current_master),
 ):
     """Получить все категории (общие + личные) с подкатегориями"""
-    stmt = select(DeviceCategory).where(
-        and_(
-            (DeviceCategory.service_id == current_master.service_id) | 
-            (DeviceCategory.master_id == current_master.id)
-        )
-    ).order_by(DeviceCategory.sort_order)
+    # Определяем условие: либо service_id, либо master_id
+    if current_master.is_admin == 1 and current_master.service_id:
+        stmt = select(DeviceCategory).where(
+            DeviceCategory.service_id == current_master.service_id
+        ).order_by(DeviceCategory.sort_order)
+    else:
+        stmt = select(DeviceCategory).where(
+            DeviceCategory.master_id == current_master.id
+        ).order_by(DeviceCategory.sort_order)
     
     result = await db.execute(stmt)
     categories = result.scalars().all()
     
-    # Для каждой категории загружаем подкатегории
+    # Для каждой категории загружаем подкатегории отдельным запросом
+    output = []
     for category in categories:
         subtypes_stmt = select(DeviceSubtype).where(
-            DeviceSubtype.category_id == category.id
+            DeviceSubtype.category_id == category.id,
+            DeviceSubtype.is_active == True
         ).order_by(DeviceSubtype.sort_order)
         subtypes_result = await db.execute(subtypes_stmt)
-        category.subtypes = subtypes_result.scalars().all()
+        subtypes = subtypes_result.scalars().all()
+        
+        output.append(DeviceCategoryOut(
+            id=category.id,
+            name=category.name,
+            description=category.description,
+            sort_order=category.sort_order,
+            is_active=category.is_active,
+            subtypes=[
+                DeviceSubtypeOut(
+                    id=s.id,
+                    name=s.name,
+                    description=s.description,
+                    price=s.price,
+                    duration_minutes=s.duration_minutes,
+                    is_active=s.is_active
+                ) for s in subtypes
+            ]
+        ))
     
-    return categories
+    return output
 
 
 @router.post("", response_model=DeviceCategoryOut)
@@ -101,14 +124,23 @@ async def create_category(
         name=payload.name,
         description=payload.description,
         sort_order=payload.sort_order,
+        is_active=True,
         service_id=current_master.service_id if current_master.is_admin == 1 else None,
         master_id=current_master.id if current_master.is_admin == 0 else None,
     )
     db.add(category)
     await db.commit()
     await db.refresh(category)
-    category.subtypes = []
-    return category
+    
+    # Возвращаем без подкатегорий
+    return DeviceCategoryOut(
+        id=category.id,
+        name=category.name,
+        description=category.description,
+        sort_order=category.sort_order,
+        is_active=category.is_active,
+        subtypes=[]
+    )
 
 
 @router.patch("/{category_id}", response_model=DeviceCategoryOut)
@@ -138,11 +170,30 @@ async def update_category(
     await db.refresh(category)
     
     # Загружаем подкатегории
-    subtypes_stmt = select(DeviceSubtype).where(DeviceSubtype.category_id == category.id)
+    subtypes_stmt = select(DeviceSubtype).where(
+        DeviceSubtype.category_id == category.id,
+        DeviceSubtype.is_active == True
+    ).order_by(DeviceSubtype.sort_order)
     subtypes_result = await db.execute(subtypes_stmt)
-    category.subtypes = subtypes_result.scalars().all()
+    subtypes = subtypes_result.scalars().all()
     
-    return category
+    return DeviceCategoryOut(
+        id=category.id,
+        name=category.name,
+        description=category.description,
+        sort_order=category.sort_order,
+        is_active=category.is_active,
+        subtypes=[
+            DeviceSubtypeOut(
+                id=s.id,
+                name=s.name,
+                description=s.description,
+                price=s.price,
+                duration_minutes=s.duration_minutes,
+                is_active=s.is_active
+            ) for s in subtypes
+        ]
+    )
 
 
 @router.delete("/{category_id}")
@@ -186,6 +237,7 @@ async def create_subtype(
         description=payload.description,
         price=payload.price,
         duration_minutes=payload.duration_minutes,
+        is_active=True,
         service_id=current_master.service_id if current_master.is_admin == 1 else None,
         master_id=current_master.id if current_master.is_admin == 0 else None,
     )
@@ -193,7 +245,14 @@ async def create_subtype(
     await db.commit()
     await db.refresh(subtype)
     
-    return subtype
+    return DeviceSubtypeOut(
+        id=subtype.id,
+        name=subtype.name,
+        description=subtype.description,
+        price=subtype.price,
+        duration_minutes=subtype.duration_minutes,
+        is_active=subtype.is_active
+    )
 
 
 @router.patch("/subtypes/{subtype_id}", response_model=DeviceSubtypeOut)
@@ -224,7 +283,14 @@ async def update_subtype(
     await db.commit()
     await db.refresh(subtype)
     
-    return subtype
+    return DeviceSubtypeOut(
+        id=subtype.id,
+        name=subtype.name,
+        description=subtype.description,
+        price=subtype.price,
+        duration_minutes=subtype.duration_minutes,
+        is_active=subtype.is_active
+    )
 
 
 @router.delete("/subtypes/{subtype_id}")
