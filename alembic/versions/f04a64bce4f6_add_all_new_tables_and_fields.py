@@ -19,9 +19,22 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ============================================
-    # 1. ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ (с проверкой)
+    # 1. СНАЧАЛА ДОБАВЛЯЕМ service_id В master
     # ============================================
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='master' AND column_name='service_id') THEN
+                ALTER TABLE master ADD COLUMN service_id VARCHAR(10) UNIQUE;
+                CREATE INDEX ix_master_service_id ON master(service_id);
+            END IF;
+        END $$;
+    """)
     
+    # ============================================
+    # 2. ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В service_request (без внешних ключей)
+    # ============================================
     op.execute("""
         DO $$ 
         BEGIN 
@@ -55,19 +68,8 @@ def upgrade() -> None:
         END $$;
     """)
     
-    op.execute("""
-        DO $$ 
-        BEGIN 
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                          WHERE table_name='master' AND column_name='service_id') THEN
-                ALTER TABLE master ADD COLUMN service_id VARCHAR(10) UNIQUE;
-                CREATE INDEX ix_master_service_id ON master(service_id);
-            END IF;
-        END $$;
-    """)
-    
     # ============================================
-    # 2. ТАБЛИЦА КАТЕГОРИЙ (с проверкой существования)
+    # 3. ТАБЛИЦА КАТЕГОРИЙ (теперь service_id уже есть)
     # ============================================
     op.execute("""
         CREATE TABLE IF NOT EXISTS device_category (
@@ -79,18 +81,36 @@ def upgrade() -> None:
             sort_order INTEGER DEFAULT 0,
             is_active BOOLEAN DEFAULT TRUE NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            FOREIGN KEY(service_id) REFERENCES master(service_id) ON DELETE CASCADE,
-            FOREIGN KEY(master_id) REFERENCES master(id) ON DELETE CASCADE,
-            CHECK ((service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)),
-            UNIQUE(service_id, master_id, name)
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
     """)
     op.execute("CREATE INDEX IF NOT EXISTS idx_device_category_service_id ON device_category(service_id);")
     op.execute("CREATE INDEX IF NOT EXISTS idx_device_category_master_id ON device_category(master_id);")
     
+    # Добавляем foreign keys и constraints после создания таблицы
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
+                          WHERE constraint_name='device_category_service_id_fkey') THEN
+                ALTER TABLE device_category ADD CONSTRAINT device_category_service_id_fkey 
+                FOREIGN KEY (service_id) REFERENCES master(service_id) ON DELETE CASCADE;
+            END IF;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
+                          WHERE constraint_name='device_category_master_id_fkey') THEN
+                ALTER TABLE device_category ADD CONSTRAINT device_category_master_id_fkey 
+                FOREIGN KEY (master_id) REFERENCES master(id) ON DELETE CASCADE;
+            END IF;
+        END $$;
+    """)
+    
     # ============================================
-    # 3. ТАБЛИЦА ВИДОВ ТЕХНИКИ (с проверкой существования)
+    # 4. ТАБЛИЦА ВИДОВ ТЕХНИКИ
     # ============================================
     op.execute("""
         CREATE TABLE IF NOT EXISTS device_subtype (
@@ -105,20 +125,26 @@ def upgrade() -> None:
             sort_order INTEGER DEFAULT 0,
             is_active BOOLEAN DEFAULT TRUE NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            FOREIGN KEY(service_id) REFERENCES master(service_id) ON DELETE CASCADE,
-            FOREIGN KEY(master_id) REFERENCES master(id) ON DELETE CASCADE,
-            FOREIGN KEY(category_id) REFERENCES device_category(id) ON DELETE CASCADE,
-            CHECK ((service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)),
-            UNIQUE(service_id, master_id, category_id, name)
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
     """)
     op.execute("CREATE INDEX IF NOT EXISTS idx_device_subtype_service_id ON device_subtype(service_id);")
     op.execute("CREATE INDEX IF NOT EXISTS idx_device_subtype_master_id ON device_subtype(master_id);")
     op.execute("CREATE INDEX IF NOT EXISTS idx_device_subtype_category ON device_subtype(category_id);")
     
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
+                          WHERE constraint_name='device_subtype_category_id_fkey') THEN
+                ALTER TABLE device_subtype ADD CONSTRAINT device_subtype_category_id_fkey 
+                FOREIGN KEY (category_id) REFERENCES device_category(id) ON DELETE CASCADE;
+            END IF;
+        END $$;
+    """)
+    
     # ============================================
-    # 4. ТАБЛИЦА ИСТОЧНИКОВ ЗАЯВОК (с проверкой существования)
+    # 5. ТАБЛИЦА ИСТОЧНИКОВ ЗАЯВОК
     # ============================================
     op.execute("""
         CREATE TABLE IF NOT EXISTS lead_source (
@@ -130,18 +156,14 @@ def upgrade() -> None:
             description TEXT,
             is_active BOOLEAN DEFAULT TRUE NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            FOREIGN KEY(service_id) REFERENCES master(service_id) ON DELETE CASCADE,
-            FOREIGN KEY(master_id) REFERENCES master(id) ON DELETE CASCADE,
-            CHECK ((service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)),
-            UNIQUE(service_id, master_id, name)
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
     """)
     op.execute("CREATE INDEX IF NOT EXISTS idx_lead_source_service_id ON lead_source(service_id);")
     op.execute("CREATE INDEX IF NOT EXISTS idx_lead_source_master_id ON lead_source(master_id);")
     
     # ============================================
-    # 5. ТАБЛИЦА РЕКЛАМНЫХ БЮДЖЕТОВ (с проверкой существования)
+    # 6. ТАБЛИЦА РЕКЛАМНЫХ БЮДЖЕТОВ
     # ============================================
     op.execute("""
         CREATE TABLE IF NOT EXISTS ad_budget (
@@ -151,16 +173,25 @@ def upgrade() -> None:
             amount NUMERIC(12, 2) NOT NULL,
             currency VARCHAR(8) DEFAULT 'RUB',
             description TEXT,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            FOREIGN KEY(source_id) REFERENCES lead_source(id) ON DELETE CASCADE,
-            UNIQUE(source_id, budget_date)
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
     """)
     op.execute("CREATE INDEX IF NOT EXISTS idx_ad_budget_source_id ON ad_budget(source_id);")
     op.execute("CREATE INDEX IF NOT EXISTS idx_ad_budget_date ON ad_budget(budget_date);")
     
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
+                          WHERE constraint_name='ad_budget_source_id_fkey') THEN
+                ALTER TABLE ad_budget ADD CONSTRAINT ad_budget_source_id_fkey 
+                FOREIGN KEY (source_id) REFERENCES lead_source(id) ON DELETE CASCADE;
+            END IF;
+        END $$;
+    """)
+    
     # ============================================
-    # 6. ДОБАВЛЯЕМ СВЯЗЬ service_request С lead_source
+    # 7. СВЯЗЬ service_request С lead_source
     # ============================================
     op.execute("""
         DO $$ 
