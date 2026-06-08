@@ -26,14 +26,25 @@ def upgrade() -> None:
         BEGIN 
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                           WHERE table_name='master' AND column_name='service_id') THEN
-                ALTER TABLE master ADD COLUMN service_id VARCHAR(10) UNIQUE;
+                ALTER TABLE master ADD COLUMN service_id VARCHAR(10);
                 CREATE INDEX ix_master_service_id ON master(service_id);
             END IF;
         END $$;
     """)
     
+    # Добавляем UNIQUE constraint (обязательно!)
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
+                          WHERE constraint_name='master_service_id_key') THEN
+                ALTER TABLE master ADD CONSTRAINT master_service_id_key UNIQUE (service_id);
+            END IF;
+        END $$;
+    """)
+    
     # ============================================
-    # 2. ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В service_request (без внешних ключей)
+    # 2. ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В service_request
     # ============================================
     op.execute("""
         DO $$ 
@@ -69,7 +80,7 @@ def upgrade() -> None:
     """)
     
     # ============================================
-    # 3. ТАБЛИЦА КАТЕГОРИЙ (теперь service_id уже есть)
+    # 3. ТАБЛИЦА КАТЕГОРИЙ
     # ============================================
     op.execute("""
         CREATE TABLE IF NOT EXISTS device_category (
@@ -87,7 +98,7 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS idx_device_category_service_id ON device_category(service_id);")
     op.execute("CREATE INDEX IF NOT EXISTS idx_device_category_master_id ON device_category(master_id);")
     
-    # Добавляем foreign keys и constraints после создания таблицы
+    # Добавляем FOREIGN KEY
     op.execute("""
         DO $$ 
         BEGIN 
