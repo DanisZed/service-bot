@@ -15,6 +15,7 @@ from app.api.order_webhook import router as order_webhook_router
 from app.api import masters as masters_router
 from app.api import manage_master as manage_master_router
 from app.api import device_categories as device_categories_router
+from app.api import lead_sources as lead_sources_router
 
 PANEL_BASE_URL = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
 
@@ -54,3 +55,4 @@ app.include_router(order_webhook_router)
 app.include_router(masters_router.router)          # ← добавить .router
 app.include_router(manage_master_router.router)
 app.include_router(device_categories_router.router)
+app.include_router(lead_sources_router.router)
