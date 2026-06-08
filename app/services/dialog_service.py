@@ -187,11 +187,14 @@ class UnifiedDialogService:
 
     async def _get_booked_slots_for_date(self, master_id: int, date_str: str) -> set[str]:
         """Возвращает множество занятых временных слотов для мастера на указанную дату"""
+        # Преобразуем строку в объект date для корректного сравнения с БД
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ServiceRequest.time_slot).where(
                     ServiceRequest.master_id == master_id,
-                    ServiceRequest.date_iso == date_str,
+                    ServiceRequest.date_iso == target_date,  # Теперь сравниваем date с date
                     ServiceRequest.status.in_(["new", "in_work", "confirmed"])
                 )
             )
