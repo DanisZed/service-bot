@@ -185,7 +185,7 @@ async def update_service_request(
         obj.source = payload.source
     if payload.what_was_done is not None:
         obj.what_was_done = payload.what_was_done
-    f payload.main_category is not None:
+    if payload.main_category is not None:
         obj.main_category = payload.main_category
     
     if payload.subtype is not None:
