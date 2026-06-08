@@ -11,7 +11,6 @@ from alembic import op
 import sqlalchemy as sa
 
 
-# revision identifiers, used by Alembic.
 revision: str = 'f04a64bce4f6'
 down_revision: Union[str, None] = 'e4f96d22c4a8'
 branch_labels: Union[str, Sequence[str], None] = None
@@ -20,20 +19,44 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ============================================
-    # 1. ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ
+    # 1. ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ (с проверкой)
     # ============================================
     
     # В service_request добавляем parts_cost (стоимость запчастей)
-    op.add_column('service_request', sa.Column('parts_cost', sa.Numeric(12, 2), nullable=True))
-    op.create_index('ix_service_request_parts_cost', 'service_request', ['parts_cost'])
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='service_request' AND column_name='parts_cost') THEN
+                ALTER TABLE service_request ADD COLUMN parts_cost NUMERIC(12, 2);
+                CREATE INDEX ix_service_request_parts_cost ON service_request(parts_cost);
+            END IF;
+        END $$;
+    """)
     
     # В service_request добавляем lead_source_id (источник заявки)
-    op.add_column('service_request', sa.Column('lead_source_id', sa.Integer, nullable=True))
-    op.create_index('ix_service_request_lead_source_id', 'service_request', ['lead_source_id'])
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='service_request' AND column_name='lead_source_id') THEN
+                ALTER TABLE service_request ADD COLUMN lead_source_id INTEGER;
+                CREATE INDEX ix_service_request_lead_source_id ON service_request(lead_source_id);
+            END IF;
+        END $$;
+    """)
     
-    # В service_request добавляем what_was_done (что сделано)
-    op.add_column('service_request', sa.Column('what_was_done', sa.Text(), nullable=True))
-    op.create_index('ix_service_request_what_was_done', 'service_request', ['what_was_done'])
+    # В service_request добавляем what_was_done (что сделано) — пропускаем если есть
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                          WHERE table_name='service_request' AND column_name='what_was_done') THEN
+                ALTER TABLE service_request ADD COLUMN what_was_done TEXT;
+                CREATE INDEX ix_service_request_what_was_done ON service_request(what_was_done);
+            END IF;
+        END $$;
+    """)
     
     # В master добавляем service_id (если ещё нет)
     op.execute("""
@@ -139,26 +162,30 @@ def upgrade() -> None:
     # ============================================
     # 6. ДОБАВЛЯЕМ СВЯЗЬ service_request С lead_source
     # ============================================
-    op.create_foreign_key(
-        'fk_service_request_lead_source',
-        'service_request', 'lead_source',
-        ['lead_source_id'], ['id'],
-        ondelete='SET NULL'
-    )
+    op.execute("""
+        DO $$ 
+        BEGIN 
+            IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
+                          WHERE constraint_name='fk_service_request_lead_source') THEN
+                ALTER TABLE service_request ADD CONSTRAINT fk_service_request_lead_source 
+                FOREIGN KEY (lead_source_id) REFERENCES lead_source(id) ON DELETE SET NULL;
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:
     # Удаляем связи и поля из service_request
-    op.drop_constraint('fk_service_request_lead_source', 'service_request', type_='foreignkey')
+    op.execute("ALTER TABLE service_request DROP CONSTRAINT IF EXISTS fk_service_request_lead_source")
     
-    op.drop_index('ix_service_request_what_was_done', table_name='service_request')
-    op.drop_column('service_request', 'what_was_done')
+    op.execute("DROP INDEX IF EXISTS ix_service_request_what_was_done")
+    op.execute("ALTER TABLE service_request DROP COLUMN IF EXISTS what_was_done")
     
-    op.drop_index('ix_service_request_lead_source_id', table_name='service_request')
-    op.drop_column('service_request', 'lead_source_id')
+    op.execute("DROP INDEX IF EXISTS ix_service_request_lead_source_id")
+    op.execute("ALTER TABLE service_request DROP COLUMN IF EXISTS lead_source_id")
     
-    op.drop_index('ix_service_request_parts_cost', table_name='service_request')
-    op.drop_column('service_request', 'parts_cost')
+    op.execute("DROP INDEX IF EXISTS ix_service_request_parts_cost")
+    op.execute("ALTER TABLE service_request DROP COLUMN IF EXISTS parts_cost")
     
     # Удаляем таблицы
     op.drop_table('ad_budget')
