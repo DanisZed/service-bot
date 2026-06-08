@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
@@ -20,12 +20,14 @@ class LeadSourceOut(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     is_active: bool
+    is_advertisable: bool
 
 
 class LeadSourceCreate(BaseModel):
     name: str
     code: Optional[str] = None
     description: Optional[str] = None
+    is_advertisable: bool = False
 
 
 class LeadSourceUpdate(BaseModel):
@@ -33,6 +35,7 @@ class LeadSourceUpdate(BaseModel):
     code: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+    is_advertisable: Optional[bool] = None
 
 
 # ========== ЭНДПОИНТЫ ==========
@@ -61,7 +64,8 @@ async def get_sources(
             name=s.name,
             code=s.code,
             description=s.description,
-            is_active=s.is_active
+            is_active=s.is_active,
+            is_advertisable=s.is_advertisable
         ) for s in sources
     ]
 
@@ -78,6 +82,7 @@ async def create_source(
         code=payload.code,
         description=payload.description,
         is_active=True,
+        is_advertisable=payload.is_advertisable,
         service_id=current_master.service_id if current_master.is_admin == 1 else None,
         master_id=current_master.id if current_master.is_admin == 0 else None,
     )
@@ -90,7 +95,8 @@ async def create_source(
         name=source.name,
         code=source.code,
         description=source.description,
-        is_active=source.is_active
+        is_active=source.is_active,
+        is_advertisable=source.is_advertisable
     )
 
 
@@ -116,6 +122,8 @@ async def update_source(
         source.description = payload.description
     if payload.is_active is not None:
         source.is_active = payload.is_active
+    if payload.is_advertisable is not None:
+        source.is_advertisable = payload.is_advertisable
     
     await db.commit()
     await db.refresh(source)
@@ -125,7 +133,8 @@ async def update_source(
         name=source.name,
         code=source.code,
         description=source.description,
-        is_active=source.is_active
+        is_active=source.is_active,
+        is_advertisable=source.is_advertisable
     )
 
 
