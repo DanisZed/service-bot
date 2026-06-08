@@ -221,10 +221,12 @@ class LeadSource(Base):
     code = Column(String(50), nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    # 👇 НОВОЕ ПОЛЕ
+    is_advertisable = Column(Boolean, default=False, nullable=False)  # Можно ли использовать для рекламы
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Связи с foreign_keys
+    # Связи
     master = relationship("Master", back_populates="lead_sources", foreign_keys=[master_id])
     budgets = relationship("AdBudget", back_populates="source")
     requests = relationship("ServiceRequest", back_populates="lead_source")
