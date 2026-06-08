@@ -11,6 +11,7 @@ from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
 
 from app.db.session import AsyncSessionLocal
 from app.services.requests import create_service_request
+from app.services.devices import list_categories, list_subtypes_by_category
 from app.services.masters_notify import notify_master_request_created
 from app.services.registration_service import registration_service
 
@@ -20,6 +21,8 @@ from sqlalchemy import select
 
 
 class DialogState:
+    CHOOSE_CATEGORY = "choose_category"
+    CHOOSE_SUBTYPE = "choose_subtype"
     ADDRESS_MODE = "address_mode"
     ADDRESS = "address"
     ADDRESS_DETAILS = "address_details"
@@ -33,9 +36,12 @@ class DialogState:
 
 @dataclass
 class DialogContext:
-    state: str = DialogState.ADDRESS_MODE
+    state: str = DialogState.CHOOSE_CATEGORY
 
     chat_id: Optional[int] = None
+    main_category: Optional[str] = None
+    subtype: Optional[str] = None
+    service_title: Optional[str] = None
     address: Optional[str] = None
     address_details: Optional[str] = None
     description: Optional[str] = None
@@ -134,9 +140,24 @@ class UnifiedDialogService:
         
         self.reset(user_id)
         ctx = self._get_ctx(user_id)
-        ctx.state = DialogState.ADDRESS_MODE
+        ctx.state = DialogState.CHOOSE_CATEGORY
         
-        return self._ask_address_mode()
+        async with AsyncSessionLocal() as session:
+            categories = await list_categories(session)
+        
+        rows: List[List[dict]] = []
+        for cat in categories:
+            rows.append([
+                {
+                    "type": "callback",
+                    "text": cat.name,
+                    "payload": f"cat:{cat.code}",
+                    "intent": "default",
+                }
+            ])
+        
+        kb = self._inline_keyboard(rows)
+        return "Выберите категорию техники:", kb
     
     async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Начинает новый диалог или сбрасывает текущий (для webhook)"""
@@ -153,9 +174,8 @@ class UnifiedDialogService:
         
         return await self.start_new_request(user_id)
 
-    def _ask_address_mode(self) -> Tuple[str, List[dict]]:
-        """Спрашивает, где выполнять работу: мастерская или выезд"""
-        kb = self._inline_keyboard(
+    def _buttons_address_mode(self) -> List[dict]:
+        return self._inline_keyboard(
             [[
                 {
                     "type": "callback",
@@ -165,13 +185,12 @@ class UnifiedDialogService:
                 },
                 {
                     "type": "callback",
-                    "text": "Выезд к клиенту",
+                    "text": "Ввести адрес",
                     "payload": "address_mode:enter_address",
                     "intent": "default",
                 },
             ]]
         )
-        return "Где будет выполняться работа?", kb
 
     def _buttons_private_house(self) -> List[dict]:
         return self._inline_keyboard(
@@ -253,18 +272,27 @@ class UnifiedDialogService:
         for start, end in TIME_SLOTS:
             time_slot = f"{start}-{end}"
             payload = f"slot_time:{date_str}:{time_slot}"
+            # Проверяем, занят ли слот
             if payload in booked:
                 text = "🔴 ЗАНЯТО"
+                buttons.append(
+                    {
+                        "type": "callback",
+                        "text": text,
+                        "payload": payload,
+                        "intent": "default",
+                    }
+                )
             else:
                 text = f"{start}-{end}"
-            buttons.append(
-                {
-                    "type": "callback",
-                    "text": text,
-                    "payload": payload,
-                    "intent": "default",
-                }
-            )
+                buttons.append(
+                    {
+                        "type": "callback",
+                        "text": text,
+                        "payload": payload,
+                        "intent": "default",
+                    }
+                )
         rows: List[List[dict]] = []
         for i in range(0, len(buttons), 3):
             rows.append(buttons[i : i + 3])
@@ -380,7 +408,42 @@ class UnifiedDialogService:
         
         ctx = self._get_ctx(user_id)
         
-        # Выбор места работы
+        if payload.startswith("cat:"):
+            category_code = payload.split(":", 1)[1]
+            ctx.main_category = category_code
+            ctx.state = DialogState.CHOOSE_SUBTYPE
+
+            async with AsyncSessionLocal() as session:
+                subtypes = await list_subtypes_by_category(session, category_code)
+
+            rows: List[List[dict]] = []
+            for st in subtypes:
+                rows.append([
+                    {
+                        "type": "callback",
+                        "text": st.name,
+                        "payload": f"sub:{st.code}",
+                        "intent": "default",
+                    }
+                ])
+            kb = self._inline_keyboard(rows)
+            return "Выберите вид техники:", kb
+
+        if payload.startswith("sub:"):
+            subtype_code = payload.split(":", 1)[1]
+            ctx.subtype = subtype_code
+            ctx.state = DialogState.ADDRESS_MODE
+            ctx.service_title = subtype_code
+
+            text = (
+                f"Записал: {ctx.service_title}.\n"
+                "Где выполнить услугу?\n"
+                "— Нажми «Мастерская», если клиент привезет сам\n"
+                "— Нажми «Ввести адрес», чтобы ввести адрес\n"
+                "Или просто отправь адрес текстом."
+            )
+            return text, self._buttons_address_mode()
+
         if payload == "address_mode:workshop" and ctx.state == DialogState.ADDRESS_MODE:
             ctx.address = "Мастерская"
             ctx.address_details = None
@@ -398,9 +461,11 @@ class UnifiedDialogService:
         if payload == "address_details:private_house" and ctx.state == DialogState.ADDRESS_DETAILS:
             ctx.address_details = None
             ctx.state = DialogState.DESCRIPTION
-            return "Принял. Теперь напиши причину обращения (детально).", None
+            return (
+                "Принял. Теперь напиши причину обращения (детально).",
+                None,
+            )
 
-        # Выбор даты
         if payload.startswith("slot:") and ctx.state == DialogState.SLOT:
             date_str = payload.split(":", 1)[1]
             ctx.date_iso = date_str
@@ -408,6 +473,7 @@ class UnifiedDialogService:
             ctx.slot = None
             ctx.state = DialogState.SLOT_TIME
             
+            # Получаем master_id
             async with AsyncSessionLocal() as session:
                 result = await session.execute(
                     select(Master).where(Master.max_user_id == user_id)
@@ -420,7 +486,6 @@ class UnifiedDialogService:
                 await self._buttons_time_slots(master_id, date_str),
             )
 
-        # Выбор времени
         if payload.startswith("slot_time:") and ctx.state == DialogState.SLOT_TIME:
             _, rest = payload.split(":", 1)
             try:
@@ -430,6 +495,7 @@ class UnifiedDialogService:
                 ctx.state = DialogState.NAME
                 return "Введи имя контактного лица", None
 
+            # Получаем master_id
             async with AsyncSessionLocal() as session:
                 result = await session.execute(
                     select(Master).where(Master.max_user_id == user_id)
@@ -437,6 +503,7 @@ class UnifiedDialogService:
                 master = result.scalar_one_or_none()
                 master_id = master.id if master else None
             
+            # Проверяем, не занят ли слот
             booked = await self._get_booked_slots_for_date(master_id, date_part)
             payload_full = f"slot_time:{date_part}:{time_part}"
             if payload_full in booked:
@@ -457,9 +524,11 @@ class UnifiedDialogService:
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка текстовых сообщений"""
         
+        # Сначала проверяем, есть ли активная сессия регистрации
         if registration_service.is_in_registration(user_id):
             return await registration_service.handle_message(user_id, text)
         
+        # Проверяем, зарегистрирован ли пользователь
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
@@ -480,7 +549,6 @@ class UnifiedDialogService:
             self.reset(user_id)
             return await self.start_new_request(user_id)
 
-        # Ввод адреса
         if ctx.state == DialogState.ADDRESS_MODE:
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
@@ -509,7 +577,6 @@ class UnifiedDialogService:
             ctx.state = DialogState.DESCRIPTION
             return "Принял. Теперь напиши причину обращения (детально).", None
 
-        # Ввод описания
         if ctx.state == DialogState.DESCRIPTION:
             ctx.description = text_clean
             ctx.state = DialogState.SLOT
@@ -518,7 +585,6 @@ class UnifiedDialogService:
                 self._buttons_slot_dates(),
             )
 
-        # Если пользователь сам ввел дату/время текстом
         if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
             ctx.date_iso = None
             ctx.date = None
@@ -526,13 +592,11 @@ class UnifiedDialogService:
             ctx.state = DialogState.NAME
             return "Введи имя контактного лица", None
 
-        # Ввод имени
         if ctx.state == DialogState.NAME:
             ctx.name = text_clean
             ctx.state = DialogState.PHONE
             return "Введи номер контактного лица.", None
 
-        # Ввод телефона
         if ctx.state == DialogState.PHONE:
             normalized = self._normalize_phone(text_clean)
             if not normalized:
@@ -561,10 +625,10 @@ class UnifiedDialogService:
                     "client_id": None,
                     "client_name": ctx.name,
                     "client_phone": ctx.phone,
-                    "main_category": "general",
-                    "subtype": "general",
+                    "main_category": ctx.main_category,
+                    "subtype": ctx.subtype,
                     "custom_device": None,
-                    "service_title": "Заявка",
+                    "service_title": ctx.service_title or ctx.subtype,
                     "problem_description": ctx.description,
                     "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
                     "address": "Мастерская" if ctx.address == "Мастерская" else ctx.address,
@@ -586,6 +650,7 @@ class UnifiedDialogService:
 
             await notify_master_request_created(req.id)
 
+            # Кнопка для новой заявки
             kb = self._inline_keyboard([[
                 {
                     "type": "callback",
@@ -599,12 +664,13 @@ class UnifiedDialogService:
             self.reset(user_id)
             return reply, kb
 
-        return await self.show_main_menu(user_id)
+        return await self.show_main_menu(user_id)  
 
     async def cancel_request(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Отменяет текущую заявку и предлагает создать новую"""
         self.reset(user_id)
         
+        # Кнопка для новой заявки
         kb = self._inline_keyboard([[
             {
                 "type": "callback",
