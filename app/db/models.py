@@ -13,7 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     Boolean,
-    UniqueConstraint,  # ← ДОБАВИТЬ
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -65,7 +65,7 @@ class ServiceRequest(Base):
 
     service_title = Column(Text, nullable=True)
     problem_description = Column(Text, nullable=False)
-    what_was_done = Column(Text, nullable=True)  # nullable=True, так как может быть пустым
+    what_was_done = Column(Text, nullable=True)
 
     location_type = Column(String(32), nullable=False)
     address = Column(Text, nullable=True)
@@ -77,7 +77,7 @@ class ServiceRequest(Base):
     datetime_to = Column(DateTime(timezone=True), nullable=True)
 
     total_amount = Column(Numeric(10, 2), nullable=True)
-    parts_cost = Column(Numeric(12, 2), nullable=True)  # стоимость запчастей
+    parts_cost = Column(Numeric(12, 2), nullable=True)
     currency = Column(String(8), default="RUB", nullable=False)
     payment_status = Column(String(32), default="unpaid", nullable=False)
     paid_amount = Column(Numeric(10, 2), nullable=True)
@@ -92,7 +92,6 @@ class ServiceRequest(Base):
     time_slots = relationship("TimeSlotBooking", back_populates="request")
     master = relationship("Master", back_populates="requests")
     
-    # Новая связь с источником заявок
     lead_source_id = Column(Integer, ForeignKey("lead_source.id", ondelete="SET NULL"), nullable=True)
     lead_source = relationship("LeadSource", back_populates="requests")
 
@@ -125,11 +124,26 @@ class Master(Base):
     login_code = Column(String(16), nullable=True)
     login_code_expires_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Связи
+    # Связи с foreign_keys
     requests = relationship("ServiceRequest", back_populates="master")
-    device_categories = relationship("DeviceCategory", back_populates="master")
-    device_subtypes = relationship("DeviceSubtype", back_populates="master")
-    lead_sources = relationship("LeadSource", back_populates="master")
+    
+    device_categories = relationship(
+        "DeviceCategory", 
+        back_populates="master",
+        foreign_keys="DeviceCategory.master_id"
+    )
+    
+    device_subtypes = relationship(
+        "DeviceSubtype", 
+        back_populates="master",
+        foreign_keys="DeviceSubtype.master_id"
+    )
+    
+    lead_sources = relationship(
+        "LeadSource", 
+        back_populates="master",
+        foreign_keys="LeadSource.master_id"
+    )
 
 
 class TimeSlotBooking(Base):
@@ -163,8 +177,8 @@ class DeviceCategory(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Связи
-    master = relationship("Master", back_populates="device_categories")
+    # Связи с foreign_keys
+    master = relationship("Master", back_populates="device_categories", foreign_keys=[master_id])
     subtypes = relationship("DeviceSubtype", back_populates="category")
 
     __table_args__ = (
@@ -188,8 +202,8 @@ class DeviceSubtype(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Связи
-    master = relationship("Master", back_populates="device_subtypes")
+    # Связи с foreign_keys
+    master = relationship("Master", back_populates="device_subtypes", foreign_keys=[master_id])
     category = relationship("DeviceCategory", back_populates="subtypes")
 
     __table_args__ = (
@@ -210,8 +224,8 @@ class LeadSource(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Связи
-    master = relationship("Master", back_populates="lead_sources")
+    # Связи с foreign_keys
+    master = relationship("Master", back_populates="lead_sources", foreign_keys=[master_id])
     budgets = relationship("AdBudget", back_populates="source")
     requests = relationship("ServiceRequest", back_populates="lead_source")
 
