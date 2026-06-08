@@ -88,6 +88,11 @@ class ServiceRequestUpdate(BaseModel):
     # Выполненные работы
     what_was_done: Optional[str] = None
 
+    # Техника и услуга
+    main_category: Optional[str] = None
+    subtype: Optional[str] = None
+    service_title: Optional[str] = None
+
 
 @router.get("", response_model=List[ServiceRequestOut])
 async def list_requests(
@@ -180,6 +185,14 @@ async def update_service_request(
         obj.source = payload.source
     if payload.what_was_done is not None:
         obj.what_was_done = payload.what_was_done
+    f payload.main_category is not None:
+        obj.main_category = payload.main_category
+    
+    if payload.subtype is not None:
+        obj.subtype = payload.subtype
+    
+    if payload.service_title is not None:
+        obj.service_title = payload.service_title    
 
     await db.commit()
     await db.refresh(obj)
