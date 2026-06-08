@@ -310,3 +310,18 @@ async def delete_subtype(
     await db.commit()
     
     return {"success": True}
+
+
+@router.get("/{category_id}/subtypes", response_model=List[DeviceSubtypeOut])
+async def get_subtypes_by_category(
+    category_id: int,
+    db: AsyncSession = Depends(get_session),
+    current_master=Depends(get_current_master),
+):
+    """Получить все подкатегории для конкретной категории"""
+    stmt = select(DeviceSubtype).where(
+        DeviceSubtype.category_id == category_id,
+        DeviceSubtype.is_active == True
+    ).order_by(DeviceSubtype.sort_order)
+    result = await db.execute(stmt)
+    return result.scalars().all()
