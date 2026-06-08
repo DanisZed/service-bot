@@ -22,7 +22,6 @@ def upgrade() -> None:
     # 1. ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ (с проверкой)
     # ============================================
     
-    # В service_request добавляем parts_cost (стоимость запчастей)
     op.execute("""
         DO $$ 
         BEGIN 
@@ -34,7 +33,6 @@ def upgrade() -> None:
         END $$;
     """)
     
-    # В service_request добавляем lead_source_id (источник заявки)
     op.execute("""
         DO $$ 
         BEGIN 
@@ -46,7 +44,6 @@ def upgrade() -> None:
         END $$;
     """)
     
-    # В service_request добавляем what_was_done (что сделано) — пропускаем если есть
     op.execute("""
         DO $$ 
         BEGIN 
@@ -58,7 +55,6 @@ def upgrade() -> None:
         END $$;
     """)
     
-    # В master добавляем service_id (если ещё нет)
     op.execute("""
         DO $$ 
         BEGIN 
@@ -71,93 +67,97 @@ def upgrade() -> None:
     """)
     
     # ============================================
-    # 2. ТАБЛИЦА КАТЕГОРИЙ (привязана к сервису/мастеру)
+    # 2. ТАБЛИЦА КАТЕГОРИЙ (с проверкой существования)
     # ============================================
-    op.create_table(
-        'device_category',
-        sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column('service_id', sa.String(10), nullable=True),
-        sa.Column('master_id', sa.BigInteger, nullable=True),
-        sa.Column('name', sa.String(100), nullable=False),
-        sa.Column('description', sa.Text, nullable=True),
-        sa.Column('sort_order', sa.Integer, server_default='0'),
-        sa.Column('is_active', sa.Boolean, server_default='true', nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()')),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()')),
-        sa.ForeignKeyConstraint(['service_id'], ['master.service_id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['master_id'], ['master.id'], ondelete='CASCADE'),
-        sa.CheckConstraint('(service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)'),
-        sa.UniqueConstraint('service_id', 'master_id', 'name')
-    )
-    op.create_index('idx_device_category_service_id', 'device_category', ['service_id'])
-    op.create_index('idx_device_category_master_id', 'device_category', ['master_id'])
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS device_category (
+            id SERIAL PRIMARY KEY,
+            service_id VARCHAR(10),
+            master_id BIGINT,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            sort_order INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            FOREIGN KEY(service_id) REFERENCES master(service_id) ON DELETE CASCADE,
+            FOREIGN KEY(master_id) REFERENCES master(id) ON DELETE CASCADE,
+            CHECK ((service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)),
+            UNIQUE(service_id, master_id, name)
+        );
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS idx_device_category_service_id ON device_category(service_id);")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_device_category_master_id ON device_category(master_id);")
     
     # ============================================
-    # 3. ТАБЛИЦА ВИДОВ ТЕХНИКИ (привязана к сервису/мастеру)
+    # 3. ТАБЛИЦА ВИДОВ ТЕХНИКИ (с проверкой существования)
     # ============================================
-    op.create_table(
-        'device_subtype',
-        sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column('service_id', sa.String(10), nullable=True),
-        sa.Column('master_id', sa.BigInteger, nullable=True),
-        sa.Column('category_id', sa.Integer, nullable=False),
-        sa.Column('name', sa.String(100), nullable=False),
-        sa.Column('description', sa.Text, nullable=True),
-        sa.Column('price', sa.Numeric(12, 2), nullable=True),
-        sa.Column('duration_minutes', sa.Integer, nullable=True),
-        sa.Column('sort_order', sa.Integer, server_default='0'),
-        sa.Column('is_active', sa.Boolean, server_default='true', nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()')),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()')),
-        sa.ForeignKeyConstraint(['service_id'], ['master.service_id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['master_id'], ['master.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['category_id'], ['device_category.id'], ondelete='CASCADE'),
-        sa.CheckConstraint('(service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)'),
-        sa.UniqueConstraint('service_id', 'master_id', 'category_id', 'name')
-    )
-    op.create_index('idx_device_subtype_service_id', 'device_subtype', ['service_id'])
-    op.create_index('idx_device_subtype_master_id', 'device_subtype', ['master_id'])
-    op.create_index('idx_device_subtype_category', 'device_subtype', ['category_id'])
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS device_subtype (
+            id SERIAL PRIMARY KEY,
+            service_id VARCHAR(10),
+            master_id BIGINT,
+            category_id INTEGER NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            price NUMERIC(12, 2),
+            duration_minutes INTEGER,
+            sort_order INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            FOREIGN KEY(service_id) REFERENCES master(service_id) ON DELETE CASCADE,
+            FOREIGN KEY(master_id) REFERENCES master(id) ON DELETE CASCADE,
+            FOREIGN KEY(category_id) REFERENCES device_category(id) ON DELETE CASCADE,
+            CHECK ((service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)),
+            UNIQUE(service_id, master_id, category_id, name)
+        );
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS idx_device_subtype_service_id ON device_subtype(service_id);")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_device_subtype_master_id ON device_subtype(master_id);")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_device_subtype_category ON device_subtype(category_id);")
     
     # ============================================
-    # 4. ТАБЛИЦА ИСТОЧНИКОВ ЗАЯВОК
+    # 4. ТАБЛИЦА ИСТОЧНИКОВ ЗАЯВОК (с проверкой существования)
     # ============================================
-    op.create_table(
-        'lead_source',
-        sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column('service_id', sa.String(10), nullable=True),
-        sa.Column('master_id', sa.BigInteger, nullable=True),
-        sa.Column('name', sa.String(100), nullable=False),
-        sa.Column('code', sa.String(50), nullable=True),
-        sa.Column('description', sa.Text, nullable=True),
-        sa.Column('is_active', sa.Boolean, server_default='true', nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()')),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()')),
-        sa.ForeignKeyConstraint(['service_id'], ['master.service_id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['master_id'], ['master.id'], ondelete='CASCADE'),
-        sa.CheckConstraint('(service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)'),
-        sa.UniqueConstraint('service_id', 'master_id', 'name')
-    )
-    op.create_index('idx_lead_source_service_id', 'lead_source', ['service_id'])
-    op.create_index('idx_lead_source_master_id', 'lead_source', ['master_id'])
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS lead_source (
+            id SERIAL PRIMARY KEY,
+            service_id VARCHAR(10),
+            master_id BIGINT,
+            name VARCHAR(100) NOT NULL,
+            code VARCHAR(50),
+            description TEXT,
+            is_active BOOLEAN DEFAULT TRUE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            FOREIGN KEY(service_id) REFERENCES master(service_id) ON DELETE CASCADE,
+            FOREIGN KEY(master_id) REFERENCES master(id) ON DELETE CASCADE,
+            CHECK ((service_id IS NOT NULL AND master_id IS NULL) OR (service_id IS NULL AND master_id IS NOT NULL)),
+            UNIQUE(service_id, master_id, name)
+        );
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS idx_lead_source_service_id ON lead_source(service_id);")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_lead_source_master_id ON lead_source(master_id);")
     
     # ============================================
-    # 5. ТАБЛИЦА РЕКЛАМНЫХ БЮДЖЕТОВ
+    # 5. ТАБЛИЦА РЕКЛАМНЫХ БЮДЖЕТОВ (с проверкой существования)
     # ============================================
-    op.create_table(
-        'ad_budget',
-        sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column('source_id', sa.Integer, nullable=False),
-        sa.Column('budget_date', sa.Date, nullable=False),
-        sa.Column('amount', sa.Numeric(12, 2), nullable=False),
-        sa.Column('currency', sa.String(8), server_default='RUB'),
-        sa.Column('description', sa.Text, nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('NOW()')),
-        sa.ForeignKeyConstraint(['source_id'], ['lead_source.id'], ondelete='CASCADE'),
-        sa.UniqueConstraint('source_id', 'budget_date')
-    )
-    op.create_index('idx_ad_budget_source_id', 'ad_budget', ['source_id'])
-    op.create_index('idx_ad_budget_date', 'ad_budget', ['budget_date'])
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS ad_budget (
+            id SERIAL PRIMARY KEY,
+            source_id INTEGER NOT NULL,
+            budget_date DATE NOT NULL,
+            amount NUMERIC(12, 2) NOT NULL,
+            currency VARCHAR(8) DEFAULT 'RUB',
+            description TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            FOREIGN KEY(source_id) REFERENCES lead_source(id) ON DELETE CASCADE,
+            UNIQUE(source_id, budget_date)
+        );
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS idx_ad_budget_source_id ON ad_budget(source_id);")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_ad_budget_date ON ad_budget(budget_date);")
     
     # ============================================
     # 6. ДОБАВЛЯЕМ СВЯЗЬ service_request С lead_source
@@ -175,24 +175,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Удаляем связи и поля из service_request
     op.execute("ALTER TABLE service_request DROP CONSTRAINT IF EXISTS fk_service_request_lead_source")
-    
     op.execute("DROP INDEX IF EXISTS ix_service_request_what_was_done")
     op.execute("ALTER TABLE service_request DROP COLUMN IF EXISTS what_was_done")
-    
     op.execute("DROP INDEX IF EXISTS ix_service_request_lead_source_id")
     op.execute("ALTER TABLE service_request DROP COLUMN IF EXISTS lead_source_id")
-    
     op.execute("DROP INDEX IF EXISTS ix_service_request_parts_cost")
     op.execute("ALTER TABLE service_request DROP COLUMN IF EXISTS parts_cost")
     
-    # Удаляем таблицы
-    op.drop_table('ad_budget')
-    op.drop_table('lead_source')
-    op.drop_table('device_subtype')
-    op.drop_table('device_category')
+    op.execute("DROP TABLE IF EXISTS ad_budget")
+    op.execute("DROP TABLE IF EXISTS lead_source")
+    op.execute("DROP TABLE IF EXISTS device_subtype")
+    op.execute("DROP TABLE IF EXISTS device_category")
     
-    # Удаляем индекс и колонку service_id из master
     op.execute("DROP INDEX IF EXISTS ix_master_service_id")
     op.execute("ALTER TABLE master DROP COLUMN IF EXISTS service_id")
