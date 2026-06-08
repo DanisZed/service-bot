@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     Boolean,
+    UniqueConstraint,  # ← ДОБАВИТЬ
 )
 from sqlalchemy.orm import declarative_base, relationship
 
