@@ -114,7 +114,7 @@ async def add_master_to_service(
             )
         
         # Проверяем, что админ имеет доступ к этому сервису
-        if current_master.service_id != service_id:
+        if not current_master.service_center or current_master.service_center.service_id != service_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Доступ запрещён"
