@@ -46,7 +46,7 @@ async def get_sources(
     current_master=Depends(get_current_master),
 ):
     """Получить все источники заявок (общие + личные)"""
-    if current_master.is_admin == 1 and current_master.service_id:
+    if current_master.is_admin == 1 and current_master.service_center and current_master.service_center.service_id:
         stmt = select(LeadSource).where(
             LeadSource.service_id == current_master.service_id
         ).order_by(LeadSource.name)
