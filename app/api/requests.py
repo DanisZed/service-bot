@@ -23,6 +23,7 @@ class ServiceRequestOut(BaseModel):
     # Привязка к мастеру
     master_id: Optional[int] = None
     master_seq: int | None = None
+    assigned_master_id: Optional[int] = None
 
     # Клиент
     client_id: Optional[int] = None
@@ -76,6 +77,7 @@ class ServiceRequestUpdate(BaseModel):
     # Что можно редактировать из фронта
     status: Optional[str] = None
     master_id: Optional[int] = None
+    assigned_master_id: Optional[int] = None  
 
     # Финансовая часть (под CRM)
     total_amount: Optional[float] = None
@@ -102,19 +104,16 @@ async def list_requests(
     db: AsyncSession = Depends(get_db),
     current_master=Depends(get_current_master),
 ):
-    """
-    Список заявок для текущего мастера.
-    Если передан ?status=..., фильтруем по нему.
-    """
     stmt = (
         select(ServiceRequest)
-        .where(ServiceRequest.master_id == current_master.id)
+        .where(
+            (ServiceRequest.master_id == current_master.id) |
+            (ServiceRequest.assigned_master_id == current_master.id)
+        )
         .order_by(ServiceRequest.id.desc())
     )
-
     if status:
         stmt = stmt.where(ServiceRequest.status == status)
-
     result = await db.execute(stmt)
     rows = result.scalars().all()
     return rows
@@ -127,10 +126,8 @@ async def get_request(
     current_master=Depends(get_current_master),
 ):
     req = await db.get(ServiceRequest, request_id)
-    if not req or req.master_id != current_master.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
-        )
+    if not req or (req.master_id != current_master.id and req.assigned_master_id != current_master.id):
+        raise HTTPException(status_code=404, detail="Not found")
     return req
 
 
@@ -141,42 +138,49 @@ async def update_service_request(
     db: AsyncSession = Depends(get_db),
     current_master=Depends(get_current_master),
 ):
-    # Достаём заявку и проверяем владельца
-    result = await db.execute(
-        select(ServiceRequest).where(ServiceRequest.id == request_id)
-    )
-    obj: ServiceRequest | None = result.scalar_one_or_none()
-    if not obj or obj.master_id != current_master.id:
+    # Находим заявку
+    obj = await db.get(ServiceRequest, request_id)
+    if not obj:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    # ========== ОБРАБОТКА СМЕНЫ СТАТУСА С ПРОСТАНОВКОЙ ДАТ ==========
+    # Проверяем права: владелец ИЛИ назначенный мастер
+    is_owner = (obj.master_id == current_master.id)
+    is_assigned = (obj.assigned_master_id == current_master.id)
+    if not (is_owner or is_assigned):
+        raise HTTPException(status_code=403, detail="Нет прав на редактирование")
+
+    # --- Обработка статуса (с простановкой дат) ---
     if payload.status is not None and payload.status != obj.status:
-        old_status = obj.status
-        new_status = payload.status
         now = datetime.utcnow()
-        
-        # Если статус меняется на "in_work" (В работе)
-        if new_status == "in_work" and old_status != "in_work":
+        if payload.status == "in_work" and obj.status != "in_work":
             obj.in_work_at = now
-        
-        # Если статус меняется на "done" (Завершена)
-        if new_status == "done" and old_status != "done":
+        if payload.status == "done" and obj.status != "done":
             obj.done_at = now
-            # Если не было отметки "в работе", ставим её тоже
             if not obj.in_work_at:
                 obj.in_work_at = now
-        
-        # Если статус меняется на "canceled" (Отменена)
-        if new_status == "canceled" and old_status != "canceled":
+        if payload.status == "canceled" and obj.status != "canceled":
             obj.cancelled_at = now
-            obj.total_amount = 0  # обнуляем сумму при отмене
-        
-        obj.status = new_status
+            obj.total_amount = 0
+        obj.status = payload.status
 
-    # если пришла новая сумма — обновляем
+    # --- Смена исполнителя (только если передан assigned_master_id) ---
+    if payload.assigned_master_id is not None:
+        if payload.assigned_master_id == current_master.id:
+            raise HTTPException(400, "Нельзя назначить заявку самому себе")
+        target_master = await db.get(Master, payload.assigned_master_id)
+        if not target_master:
+            raise HTTPException(404, "Мастер не найден")
+        obj.assigned_master_id = payload.assigned_master_id
+        # Если заявка была новой – переводим в статус "assigned"
+        if obj.status == "new" and payload.status is None:
+            obj.status = "assigned"
+        # Отправляем уведомление новому мастеру
+        from app.services.master_notify import notify_master_request_created
+        await notify_master_request_created(obj.id)
+
+    # --- Обновление остальных полей (доступно и владельцу, и исполнителю) ---
     if payload.total_amount is not None:
         obj.total_amount = payload.total_amount
-
     if payload.payment_status is not None:
         obj.payment_status = payload.payment_status
     if payload.paid_amount is not None:
@@ -191,12 +195,10 @@ async def update_service_request(
         obj.what_was_done = payload.what_was_done
     if payload.main_category is not None:
         obj.main_category = payload.main_category
-    
     if payload.subtype is not None:
         obj.subtype = payload.subtype
-    
     if payload.service_title is not None:
-        obj.service_title = payload.service_title    
+        obj.service_title = payload.service_title
 
     await db.commit()
     await db.refresh(obj)

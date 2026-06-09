@@ -563,10 +563,7 @@ class UnifiedDialogService:
                     "chat_id": user_id,
                     "client_id": None,
                     "client_name": ctx.name,
-                    "client_phone": ctx.phone,
-                    "main_category": "general",
-                    "subtype": "general",
-                    "custom_device": None,
+                    "client_phone": ctx.phone,                    
                     "service_title": "Заявка",
                     "problem_description": ctx.description,
                     "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
@@ -581,6 +578,7 @@ class UnifiedDialogService:
                     "payment_status": "unpaid",
                     "meta": None,
                     "master_id": master_id,
+                    "assigned_master_id": master_id,   # 👈 добавляем
                 }
 
                 req = await create_service_request(session, data)

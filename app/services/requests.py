@@ -14,8 +14,6 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
     Обязательные поля в data:
       - user_id
       - chat_id
-      - main_category  (код категории, напр. 'major_appliance')
-      - subtype        (код подтипа, напр. 'washing_machine')
       - problem_description
       - location_type  ('workshop' / 'client_address')
     Остальное опционально.
@@ -24,8 +22,6 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
     required_fields = [
         "user_id",
         "chat_id",
-        "main_category",
-        "subtype",
         "problem_description",
         "location_type",
     ]
@@ -60,13 +56,14 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
 
     obj = ServiceRequest(
         status="new",
-        source="max_bot",  # источник заявок из MAX
+        source="max_bot",
         user_external_id=data["user_id"],
         chat_external_id=data["chat_id"],
 
-        # привязка к мастеру и его внутренний номер
         master_id=master_id,
         master_seq=next_seq,
+
+        assigned_master_id=data.get("assigned_master_id"),  # 👈 добавлено
 
         client_id=data.get("client_id"),
         client_name=data.get("client_name"),

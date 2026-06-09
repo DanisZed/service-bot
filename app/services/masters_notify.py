@@ -108,31 +108,33 @@ def _build_google_calendar_url(
 
 
 async def notify_master_request_created(request_id: int) -> None:
-    print(f"### NOTIFY CALLED request_id={request_id}")
     """
-    Уведомляет мастера о созданной заявке:
-    - читает ServiceRequest и Master,
-    - собирает текст + кнопки (Яндекс, Google),
-    - отправляет мастеру личное сообщение через MaxClient.
+    Уведомляет назначенного мастера (или владельца, если назначенного нет) о заявке.
     """
     logger.info(f"notify_master_request_created: request_id={request_id}")
 
     async with AsyncSessionLocal() as session:
         req = await session.get(ServiceRequest, request_id)
-        print("### REQ:", req, "master_id:", getattr(req, "master_id", None))
-        if not req or not req.master_id:
-            print("### EXIT: no req or no master_id")
+        if not req:
+            logger.warning(f"notify_master_request_created: request {request_id} not found")
             return
 
-        master = await session.get(Master, req.master_id)
-        print("### MASTER:", master, "max_user_id:", getattr(master, "max_user_id", None))
+        # Кому отправлять: назначенный мастер или владелец
+        target_master_id = req.assigned_master_id or req.master_id
+        if not target_master_id:
+            logger.warning(f"notify_master_request_created: no target master for request {request_id}")
+            return
+
+        master = await session.get(Master, target_master_id)
         if not master or not master.max_user_id:
-            print("### EXIT: no master or no max_user_id")
+            logger.warning(f"notify_master_request_created: master {target_master_id} not found or no max_user_id")
             return
 
+        # Формирование текста сообщения (без изменений)
         lines: List[str] = [f"📝 ЗАЯВКА № {req.id}\n"]
 
-        if getattr(req, "service_title", None) or getattr(req, "subtype", None):
+        if req.service_title or req.subtype:
+            from app.services.master_notify import SUBTYPE_NAMES  # или импортируйте в начале файла
             lines.append(f"🔧 Вид техники: {SUBTYPE_NAMES.get(req.subtype, req.subtype)}")
 
         if req.problem_description:
@@ -152,7 +154,7 @@ async def notify_master_request_created(request_id: int) -> None:
         if isinstance(req.date_iso, datetime):
             lines.append(f"📅 Дата: {req.date_iso.strftime('%d.%m.%Y')}")
             date_iso_str = req.date_iso.date().isoformat()
-        elif hasattr(req.date_iso, "isoformat"):  # date
+        elif hasattr(req.date_iso, "isoformat"):
             lines.append(f"📅 Дата: {req.date_iso.strftime('%d.%m.%Y')}")
             date_iso_str = req.date_iso.isoformat()
         else:
@@ -183,45 +185,19 @@ async def notify_master_request_created(request_id: int) -> None:
 
         buttons_rows: List[List[dict]] = []
         if yandex_url:
-            buttons_rows.append(
-                [
-                    {
-                        "type": "link",
-                        "text": "Проложить маршрут (Яндекс)",
-                        "url": yandex_url,
-                    }
-                ]
-            )
-
+            buttons_rows.append([{"type": "link", "text": "Проложить маршрут (Яндекс)", "url": yandex_url}])
         if google_url:
-            buttons_rows.append(
-                [
-                    {
-                        "type": "link",
-                        "text": "Добавить в Google Календарь",
-                        "url": google_url,
-                    }
-                ]
-            )
+            buttons_rows.append([{"type": "link", "text": "Добавить в Google Календарь", "url": google_url}])
 
         attachments = None
         if buttons_rows:
-            attachments = [
-                {
-                    "type": "inline_keyboard",
-                    "payload": {"buttons": buttons_rows},
-                }
-            ]
+            attachments = [{"type": "inline_keyboard", "payload": {"buttons": buttons_rows}}]
 
         logger.info(f"notify_master_request_created: sending to master {master.max_user_id}")
 
         client = MaxClient(token=MAX_ORDER_BOT_TOKEN)
         try:
-            resp = await client.send_text_to_user(
-                user_id=master.max_user_id,
-                text=text,
-                attachments=attachments,
-            )
+            resp = await client.send_text_to_user(user_id=master.max_user_id, text=text, attachments=attachments)
             logger.info(f"notify_master_request_created: response={resp}")
         finally:
             await client.close()
