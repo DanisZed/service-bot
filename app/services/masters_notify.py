@@ -1,4 +1,4 @@
-# app/services/master_notify.py
+# app/services/masters_notify.py
 import os
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -133,8 +133,7 @@ async def notify_master_request_created(request_id: int) -> None:
         # Формирование текста сообщения (без изменений)
         lines: List[str] = [f"📝 ЗАЯВКА № {req.id}\n"]
 
-        if req.service_title or req.subtype:
-            from app.services.master_notify import SUBTYPE_NAMES  # или импортируйте в начале файла
+        if req.service_title or req.subtype:            
             lines.append(f"🔧 Вид техники: {SUBTYPE_NAMES.get(req.subtype, req.subtype)}")
 
         if req.problem_description:
