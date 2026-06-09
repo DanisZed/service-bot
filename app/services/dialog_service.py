@@ -389,19 +389,19 @@ class UnifiedDialogService:
             ctx.address_details = None
             ctx.state = DialogState.DESCRIPTION
             return (
-                "Понял, работа в мастерской.\n"
-                "Опиши, пожалуйста, что нужно сделать (детально).",
+                "Принято, работа в мастерской.\n"
+                "Причина обращения со слов клиента:",
                 None,
             )
 
         if payload == "address_mode:enter_address" and ctx.state == DialogState.ADDRESS_MODE:
             ctx.state = DialogState.ADDRESS
-            return "Хорошо, введи, пожалуйста, полный адрес (город, улица, дом).", None
+            return "Введите полный адрес (город, улица, дом).", None
 
         if payload == "address_details:private_house" and ctx.state == DialogState.ADDRESS_DETAILS:
             ctx.address_details = None
             ctx.state = DialogState.DESCRIPTION
-            return "Принял. Теперь напиши причину обращения (детально).", None
+            return "Записно. Теперь напиши причину обращения со слов клиента:", None
 
         # Выбор даты
         if payload.startswith("slot:") and ctx.state == DialogState.SLOT:
@@ -419,7 +419,7 @@ class UnifiedDialogService:
                 master_id = master.id if master else None
             
             return (
-                f"Выбери удобное время для {ctx.date}:",
+                f"Выберите удобное время для {ctx.date}:",
                 await self._buttons_time_slots(master_id, date_str),
             )
 
@@ -431,7 +431,7 @@ class UnifiedDialogService:
             except ValueError:
                 ctx.slot = rest
                 ctx.state = DialogState.NAME
-                return "Введи имя контактного лица", None
+                return "Введите имя контактного лица", None
 
             async with AsyncSessionLocal() as session:
                 result = await session.execute(

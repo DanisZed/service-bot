@@ -78,6 +78,7 @@ class ServiceRequestUpdate(BaseModel):
 
     # Финансовая часть (под CRM)
     total_amount: Optional[float] = None
+    parts_cost: Optional[float] = None
     payment_status: Optional[str] = None
     paid_amount: Optional[float] = None
     paid_at: Optional[datetime] = None
@@ -179,6 +180,8 @@ async def update_service_request(
         obj.payment_status = payload.payment_status
     if payload.paid_amount is not None:
         obj.paid_amount = payload.paid_amount
+    if payload.parts_cost is not None:
+        obj.parts_cost = payload.parts_cost
     if payload.paid_at is not None:
         obj.paid_at = payload.paid_at
     if payload.source is not None:
