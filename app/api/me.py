@@ -153,35 +153,36 @@ async def get_me(current_master=Depends(get_current_master)):
     """
     Возвращает информацию о текущем мастере/администраторе
     """
-    
-    # Определяем роль
     is_admin = current_master.is_admin == 1
     role = "admin" if is_admin else "master"
-    
-    # Формируем display_name (только Имя Фамилия, БЕЗ service_name)
+
+    # Формируем display_name (только имя и фамилия)
     name_parts = []
     if current_master.lastname:
         name_parts.append(current_master.lastname)
     if current_master.name:
         name_parts.append(current_master.name)
     display_name = " ".join(name_parts) if name_parts else ("Администратор" if is_admin else "Мастер")
-    
-    # display_role: "Администратор" или "Мастер"
+
     display_role = "Администратор" if is_admin else "Мастер"
-    
-    # display_header: название сервиса (только для админа)
+
+    # display_header: название сервиса (только для админа) – теперь через service_center
     display_header = None
-    if is_admin and current_master.service_name:
-        display_header = current_master.service_name
-    
+    if is_admin and current_master.service_center:
+        display_header = current_master.service_center.service_name
+
+    # Получаем service_name и service_id через связанный объект service_center
+    service_name = current_master.service_center.service_name if current_master.service_center else None
+    service_id = current_master.service_center.service_id if current_master.service_center else None
+
     return MeOut(
         id=current_master.id,
         master_id=current_master.master_id,
         name=current_master.name,
         lastname=current_master.lastname,
-        service_name=current_master.service_name,
+        service_name=service_name,           # было current_master.service_name
         role=role,
-        service_id=getattr(current_master, 'service_id', None),
+        service_id=service_id,               # было getattr(current_master, 'service_id', None)
         phone=current_master.phone,
         email=current_master.email,
         user_id=current_master.max_user_id,
@@ -190,7 +191,7 @@ async def get_me(current_master=Depends(get_current_master)):
         display_header=display_header,
         avatar_url=current_master.avatar_url,
     )
-
+      
 @router.get("/avatar", response_model=AvatarResponse)
 async def get_my_avatar(    
     current_master: Master = Depends(get_current_master),
