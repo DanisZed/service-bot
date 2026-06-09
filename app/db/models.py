@@ -91,8 +91,8 @@ class ServiceRequest(Base):
     # Связи
     client = relationship("Client", back_populates="requests")
     time_slots = relationship("TimeSlotBooking", back_populates="request")
-    master = relationship("Master", back_populates="requests")
-    assigned_master = relationship("Master", foreign_keys=[assigned_master_id])
+    master = relationship("Master", primaryjoin="ServiceRequest.master_id == Master.id", back_populates="requests")
+    assigned_master = relationship("Master", primaryjoin="ServiceRequest.assigned_master_id == Master.id")
     
     lead_source_id = Column(Integer, ForeignKey("lead_source.id", ondelete="SET NULL"), nullable=True)
     lead_source = relationship("LeadSource", back_populates="requests")
@@ -127,7 +127,7 @@ class Master(Base):
     login_code_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     # Связи с foreign_keys
-    requests = relationship("ServiceRequest", back_populates="master")
+    requests = relationship("ServiceRequest", primaryjoin="Master.id == ServiceRequest.master_id", back_populates="master")
     
     device_categories = relationship(
         "DeviceCategory", 
