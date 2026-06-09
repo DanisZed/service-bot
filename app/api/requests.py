@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ServiceRequest
+from app.db.models import ServiceRequest, Master
 from app.api.deps import get_current_master, get_db
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
