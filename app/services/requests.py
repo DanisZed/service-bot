@@ -4,7 +4,7 @@ from datetime import datetime, date
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ServiceRequest
+from app.db.models import ServiceRequest, Master
 
 
 async def create_service_request(session: AsyncSession, data: Dict[str, Any]) -> ServiceRequest:
