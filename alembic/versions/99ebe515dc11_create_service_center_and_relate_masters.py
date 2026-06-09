@@ -74,6 +74,6 @@ def downgrade():
         WHERE master.service_center_id = sc.id
     """)
 
-    op.drop_constraint('fk_master_service_center_id', 'master', type_='foreignkey')
+    op.drop_constraint('master_service_id_key', 'master', type_='unique', cascade=True)
     op.drop_column('master', 'service_center_id')
     op.drop_table('service_center')
