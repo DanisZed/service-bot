@@ -41,6 +41,7 @@ class ServiceRequest(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
+    assigned_master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
     master_seq = Column(Integer, nullable=True)
 
     status = Column(String(32), default="new", nullable=False)
@@ -91,6 +92,7 @@ class ServiceRequest(Base):
     client = relationship("Client", back_populates="requests")
     time_slots = relationship("TimeSlotBooking", back_populates="request")
     master = relationship("Master", back_populates="requests")
+    assigned_master = relationship("Master", foreign_keys=[assigned_master_id])
     
     lead_source_id = Column(Integer, ForeignKey("lead_source.id", ondelete="SET NULL"), nullable=True)
     lead_source = relationship("LeadSource", back_populates="requests")
