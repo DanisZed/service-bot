@@ -1,4 +1,3 @@
-# app/api/lead_sources.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
@@ -46,11 +45,17 @@ async def get_sources(
     current_master=Depends(get_current_master),
 ):
     """Получить все источники заявок (общие + личные)"""
-    if current_master.is_admin == 1 and current_master.service_center and current_master.service_center.service_id:
-        stmt = select(LeadSource).where(
-            LeadSource.service_id == current_master.service_id
-        ).order_by(LeadSource.name)
+    # Для админа – источники, привязанные к его сервис-центру (по service_id)
+    if current_master.is_admin == 1:
+        if current_master.service_center:
+            stmt = select(LeadSource).where(
+                LeadSource.service_id == current_master.service_center.service_id
+            ).order_by(LeadSource.name)
+        else:
+            # У админа нет привязанного сервис-центра – пустой список
+            return []
     else:
+        # Для обычного мастера – его личные источники
         stmt = select(LeadSource).where(
             LeadSource.master_id == current_master.id
         ).order_by(LeadSource.name)
@@ -77,14 +82,24 @@ async def create_source(
     current_master=Depends(get_current_master),
 ):
     """Создать новый источник заявок"""
+    # Определяем service_id и master_id в зависимости от роли
+    if current_master.is_admin == 1:
+        if not current_master.service_center:
+            raise HTTPException(status_code=400, detail="У администратора нет привязанного сервис-центра")
+        service_id = current_master.service_center.service_id
+        master_id = None
+    else:
+        service_id = None
+        master_id = current_master.id
+    
     source = LeadSource(
         name=payload.name,
         code=payload.code,
         description=payload.description,
         is_active=True,
         is_advertisable=payload.is_advertisable,
-        service_id=current_master.service_id if current_master.is_admin == 1 else None,
-        master_id=current_master.id if current_master.is_admin == 0 else None,
+        service_id=service_id,
+        master_id=master_id,
     )
     db.add(source)
     await db.commit()
@@ -113,6 +128,14 @@ async def update_source(
     
     if not source:
         raise HTTPException(status_code=404, detail="Источник не найден")
+    
+    # Проверка прав: админ может редактировать источники своего сервиса, мастер – только свои
+    if current_master.is_admin == 1:
+        if not current_master.service_center or source.service_id != current_master.service_center.service_id:
+            raise HTTPException(status_code=403, detail="Нет прав на редактирование этого источника")
+    else:
+        if source.master_id != current_master.id:
+            raise HTTPException(status_code=403, detail="Нет прав на редактирование этого источника")
     
     if payload.name is not None:
         source.name = payload.name
@@ -150,6 +173,14 @@ async def delete_source(
     
     if not source:
         raise HTTPException(status_code=404, detail="Источник не найден")
+    
+    # Проверка прав (аналогично update)
+    if current_master.is_admin == 1:
+        if not current_master.service_center or source.service_id != current_master.service_center.service_id:
+            raise HTTPException(status_code=403, detail="Нет прав на удаление этого источника")
+    else:
+        if source.master_id != current_master.id:
+            raise HTTPException(status_code=403, detail="Нет прав на удаление этого источника")
     
     await db.delete(source)
     await db.commit()
