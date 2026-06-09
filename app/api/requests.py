@@ -177,7 +177,7 @@ async def update_service_request(
         if obj.status == "new" and payload.status is None:
             obj.status = "assigned"
         # Отправляем уведомление новому мастеру
-        from app.services.master_notify import notify_master_request_created
+        
         await notify_master_request_created(obj.id)
 
     # --- Обновление остальных полей (доступно и владельцу, и исполнителю) ---
