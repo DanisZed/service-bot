@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import ServiceRequest, Master
 from app.api.deps import get_current_master, get_db
 
+from app.services.masters_notify import notify_master_request_created
+
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
 
