@@ -52,6 +52,7 @@ class ServiceRequestOut(BaseModel):
 
     # Деньги
     total_amount: Optional[float] = None
+    parts_cost: Optional[float] = None   # ← добавить
     currency: str
     payment_status: str
     paid_amount: Optional[float] = None
