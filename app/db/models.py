@@ -20,6 +20,19 @@ from sqlalchemy.orm import declarative_base, relationship
 Base = declarative_base()
 
 
+class ServiceCenter(Base):
+    __tablename__ = "service_center"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    service_id = Column(String(10), unique=True, nullable=False, index=True)
+    service_name = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Связь с мастерами
+    masters = relationship("Master", back_populates="service_center")
+
+
 class Client(Base):
     __tablename__ = "client"
 
@@ -108,9 +121,10 @@ class Master(Base):
 
     master_id = Column(String(12), unique=True, nullable=True)
     lastname = Column(Text, nullable=True)
-    service_name = Column(Text, nullable=True)
-    service_id = Column(String(10), unique=True, nullable=True)
+
     is_admin = Column(Integer, nullable=False, default=0)
+
+    service_center_id = Column(Integer, ForeignKey("service_center.id", ondelete="SET NULL"), nullable=True)
 
     name = Column(Text, nullable=True)
     phone = Column(String(32), nullable=True)
@@ -128,6 +142,7 @@ class Master(Base):
 
     # Связи с foreign_keys
     requests = relationship("ServiceRequest", primaryjoin="Master.id == ServiceRequest.master_id", back_populates="master")
+    service_center = relationship("ServiceCenter", back_populates="masters")
     
     device_categories = relationship(
         "DeviceCategory", 
