@@ -4,6 +4,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 from app.db.session import AsyncSessionLocal
 from app.db.models import Master
@@ -48,9 +49,11 @@ async def get_current_master(
         )
 
     result = await db.execute(
-        select(Master).where(Master.id == int(master_id))
+        select(Master)
+        .where(Master.id == int(master_id))
+        .options(joinedload(Master.service_center))
     )
-    master = result.scalars().first()
+    master = result.unique().scalars().first()
     if not master:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
