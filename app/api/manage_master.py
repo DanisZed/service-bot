@@ -1,4 +1,3 @@
-# app/api/manage_master.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
@@ -7,14 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
 from app.db.session import get_session
-from app.db.models import Master
+from app.db.models import Master, ServiceCenter
 from app.api.deps import get_current_master
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/service", tags=["service"])
 
-
-# ========== СХЕМЫ ==========
 
 class LinkedMasterOut(BaseModel):
     id: int
@@ -42,11 +39,9 @@ class ClearServiceResponse(BaseModel):
     message: str
 
 
-# ========== ЭНДПОИНТЫ ==========
-
-@router.get("/{service_id}/masters", response_model=List[LinkedMasterOut])
+@router.get("/{service_identifier}/masters", response_model=List[LinkedMasterOut])
 async def get_service_masters(
-    service_id: str,
+    service_identifier: str,
     current_master: Master = Depends(get_current_master),
     db: AsyncSession = Depends(get_session),
 ):
@@ -54,27 +49,25 @@ async def get_service_masters(
     Получить всех мастеров, привязанных к сервисному центру
     Только для администраторов этого сервиса
     """
-    # Проверяем, что текущий пользователь - админ
     if current_master.is_admin != 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Только администратор может просматривать мастеров сервиса"
         )
     
-    # Проверяем, что админ имеет доступ к этому сервису
-    if current_master.service_id != service_id:
+    # Проверяем, что админ принадлежит сервисному центру с таким service_id
+    if not current_master.service_center or current_master.service_center.service_id != service_identifier:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Доступ запрещён"
         )
     
-    # Находим всех мастеров с таким service_id (включая админов, если нужно)
-    # Но для списка подчинённых лучше исключить самого админа
+    # Находим всех мастеров с тем же service_center_id
     result = await db.execute(
         select(Master).where(
-            Master.service_id == service_id,
-            Master.is_admin == 0,  # только обычные мастера
-            Master.id != current_master.id  # исключаем самого админа на всякий случай
+            Master.service_center_id == current_master.service_center.id,
+            Master.is_admin == 0,
+            Master.id != current_master.id
         )
     )
     masters = result.scalars().all()
@@ -92,9 +85,9 @@ async def get_service_masters(
     ]
 
 
-@router.post("/{service_id}/masters", response_model=AddMasterResponse)
+@router.post("/{service_identifier}/masters", response_model=AddMasterResponse)
 async def add_master_to_service(
-    service_id: str,
+    service_identifier: str,
     request: AddMasterRequest,
     current_master: Master = Depends(get_current_master),
     db: AsyncSession = Depends(get_session),
@@ -104,23 +97,33 @@ async def add_master_to_service(
     Только для администраторов сервиса
     """
     try:
-        logger.info(f"Попытка добавления мастера: {request.master_id} в сервис {service_id}")
+        logger.info(f"Попытка добавления мастера: {request.master_id} в сервис {service_identifier}")
         
-        # Проверяем, что текущий пользователь - админ
         if current_master.is_admin != 1:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Только администратор может добавлять мастеров"
             )
         
-        # Проверяем, что админ имеет доступ к этому сервису
-        if not current_master.service_center or current_master.service_center.service_id != service_id:
+        # Находим сервисный центр по service_identifier (строковый service_id)
+        result = await db.execute(
+            select(ServiceCenter).where(ServiceCenter.service_id == service_identifier)
+        )
+        service_center = result.scalar_one_or_none()
+        if not service_center:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Сервисный центр не найден"
+            )
+        
+        # Проверяем, что текущий админ принадлежит этому центру
+        if current_master.service_center_id != service_center.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Доступ запрещён"
             )
         
-        # Находим мастера по master_id
+        # Находим целевого мастера по master_id
         result = await db.execute(
             select(Master).where(Master.master_id == request.master_id)
         )
@@ -132,28 +135,25 @@ async def add_master_to_service(
                 detail=f"Мастер с ID {request.master_id} не найден"
             )
         
-        # Проверяем, что мастер не админ
         if target_master.is_admin == 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Нельзя добавить администратора в качестве мастера"
             )
         
-        # Проверяем, что мастер не привязан к другому сервису
-        if target_master.service_id and target_master.service_id != service_id:
+        if target_master.service_center_id and target_master.service_center_id != service_center.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Мастер уже привязан к сервису {target_master.service_name}"
+                detail=f"Мастер уже привязан к другому сервисному центру"
             )
         
-        # Привязываем мастера к сервису
-        target_master.service_id = request.service_id
-        target_master.service_name = request.service_name
+        # Привязываем мастера к сервисному центру
+        target_master.service_center_id = service_center.id
         
         await db.commit()
         await db.refresh(target_master)
         
-        logger.info(f"Мастер {target_master.id} успешно добавлен в сервис {service_id}")
+        logger.info(f"Мастер {target_master.id} успешно добавлен в сервис {service_identifier}")
         
         return AddMasterResponse(
             success=True,
@@ -185,34 +185,29 @@ async def clear_master_service(
     db: AsyncSession = Depends(get_session),
 ):
     """
-    Очистить service_id и service_name у мастера (отвязать от сервисного центра)
+    Очистить service_center_id у мастера (отвязать от сервисного центра)
     Только для администраторов
     """
-    # Проверяем, что текущий пользователь - админ
     if current_master.is_admin != 1:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Только администратор может отвязывать мастеров"
         )
     
-    # Находим целевого мастера
     result = await db.execute(select(Master).where(Master.id == master_id))
     target_master = result.scalar_one_or_none()
     
     if not target_master:
         raise HTTPException(status_code=404, detail="Мастер не найден")
     
-    # Проверяем, что мастер принадлежит сервису текущего админа
-    if target_master.service_id != current_master.service_id:
+    # Проверяем, что мастер принадлежит тому же сервисному центру, что и админ
+    if not current_master.service_center or target_master.service_center_id != current_master.service_center.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Мастер не принадлежит вашему сервисному центру"
         )
     
-    # Очищаем привязку к сервису
-    target_master.service_id = None
-    target_master.service_name = None
-    
+    target_master.service_center_id = None
     await db.commit()
     
     return ClearServiceResponse(
