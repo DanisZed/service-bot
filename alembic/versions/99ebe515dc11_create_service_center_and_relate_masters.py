@@ -56,7 +56,7 @@ def upgrade():
     """)
 
     # 5. Удаляем старые колонки (если больше не нужны)
-    op.drop_constraint('master_service_id_key', 'master', type_='unique')
+  
     op.drop_column('master', 'service_id')
     op.drop_column('master', 'service_name')
 
