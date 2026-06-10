@@ -11,6 +11,7 @@ from app.db.models import ServiceRequest, Master
 from app.api.deps import get_current_master, get_db
 
 from app.services.masters_notify import notify_master_request_created
+from app.services.requests import create_service_request
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
@@ -99,6 +100,23 @@ class ServiceRequestUpdate(BaseModel):
     subtype: Optional[str] = None
     service_title: Optional[str] = None
 
+class CreateRequestFromWeb(BaseModel):
+    problem_description: str
+    location_type: str
+    master_id: Optional[int] = None           # если не указан, назначается текущему мастеру
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    address: Optional[str] = None
+    address_details: Optional[str] = None
+    date_iso: Optional[str] = None
+    time_slot: Optional[str] = None
+    main_category: str = "general"
+    subtype: str = "general"
+    service_title: Optional[str] = None
+    custom_device: Optional[str] = None
+    total_amount: Optional[float] = None
+    parts_cost: Optional[float] = None
+    source: str = "web"
 
 @router.get("", response_model=List[ServiceRequestOut])
 async def list_requests(
@@ -132,6 +150,56 @@ async def get_request(
         raise HTTPException(status_code=404, detail="Not found")
     return req
 
+
+
+@router.post("/create", response_model=ServiceRequestOut, status_code=status.HTTP_201_CREATED)
+async def create_request_from_web(
+    payload: CreateRequestFromWeb,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    """
+    Создаёт заявку из веб-интерфейса (аналог бота).
+    Авторизация по JWT-куке. Если master_id не указан, заявка назначается текущему мастеру.
+    """
+    # Определяем исполнителя и владельца
+    assigned_master_id = payload.master_id or current_master.id
+    owner_master_id = current_master.id
+
+    data = {
+        "user_id": current_master.max_user_id,
+        "chat_id": current_master.max_user_id,
+        "master_id": owner_master_id,
+        "assigned_master_id": assigned_master_id,
+        "client_name": payload.client_name,
+        "client_phone": payload.client_phone,
+        "main_category": payload.main_category,
+        "subtype": payload.subtype,
+        "custom_device": payload.custom_device,
+        "service_title": payload.service_title,
+        "problem_description": payload.problem_description,
+        "location_type": payload.location_type,
+        "address": payload.address,
+        "address_details": payload.address_details,
+        "date_iso": payload.date_iso,
+        "time_slot": payload.time_slot,
+        "datetime_from": None,
+        "datetime_to": None,
+        "total_amount": payload.total_amount,
+        "parts_cost": payload.parts_cost,
+        "currency": "RUB",
+        "payment_status": "unpaid",
+        "paid_amount": None,
+        "paid_at": None,
+        "source": payload.source,
+        "yandex_url": None,
+        "google_url": None,
+        "meta": None,
+    }
+
+    req = await create_service_request(db, data)
+    await notify_master_request_created(req.id)
+    return req
 
 @router.patch("/{request_id}", response_model=ServiceRequestOut)
 async def update_service_request(
