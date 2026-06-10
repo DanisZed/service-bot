@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, List, Tuple
 import os
 
-from max_client import MaxClient, MAX_APPLICATIONS_CHAT_ID
+from max_client import MaxClient
 
 from app.db.session import AsyncSessionLocal
 from app.services.requests import create_service_request
@@ -17,6 +17,9 @@ from app.services.registration_service import registration_service
 from app.db.models import Master, ServiceRequest
 
 from sqlalchemy import select
+
+import jwt
+from app.services.masters_notify import _build_google_calendar_url
 
 
 class DialogState:
@@ -70,7 +73,16 @@ TIME_SLOTS = [
     ("17:00", "18:00"),
 ]
 
-MY_USER_ID = int(os.getenv("MAX_OWNER_USER_ID", "0"))
+def _get_panel_login_url(self, user_id: int) -> str:
+    """Генерирует ссылку для авторизации в панели по MAX user_id."""
+    payload = {
+        "sub": str(user_id),
+        "exp": datetime.utcnow() + timedelta(hours=24),
+        "type": "max_auto_login"
+    }
+    token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+    panel_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+    return f"{panel_base}/panel?token={token}"
 
 
 class UnifiedDialogService:
@@ -187,14 +199,13 @@ class UnifiedDialogService:
 
     async def _get_booked_slots_for_date(self, master_id: int, date_str: str) -> set[str]:
         """Возвращает множество занятых временных слотов для мастера на указанную дату"""
-        # Преобразуем строку в объект date для корректного сравнения с БД
         target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
         
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ServiceRequest.time_slot).where(
                     ServiceRequest.master_id == master_id,
-                    ServiceRequest.date_iso == target_date,  # Теперь сравниваем date с date
+                    ServiceRequest.date_iso == target_date,
                     ServiceRequest.status.in_(["new", "in_work", "confirmed"])
                 )
             )
@@ -203,6 +214,16 @@ class UnifiedDialogService:
                 if row[0]:
                     booked_slots.add(f"slot_time:{date_str}:{row[0]}")
             return booked_slots
+
+    async def _has_any_free_slot(self, master_id: int, date_str: str) -> bool:
+        """Проверяет, есть ли хотя бы один свободный слот на указанную дату"""
+        booked = await self._get_booked_slots_for_date(master_id, date_str)
+        for start, end in TIME_SLOTS:
+            time_slot = f"{start}-{end}"
+            payload = f"slot_time:{date_str}:{time_slot}"
+            if payload not in booked:
+                return True
+        return False
 
     def _build_slot_date_options(self) -> List[dict]:
         today = datetime.now().date()
@@ -349,6 +370,18 @@ class UnifiedDialogService:
         ]
         return base + "?" + "&".join(parts)
 
+    def _ask_name(self) -> Tuple[str, List[dict]]:
+        """Запрашивает имя клиента с кнопкой 'Неизвестно'."""
+        kb = self._inline_keyboard([[
+            {
+                "type": "callback",
+                "text": "❓ Неизвестно / Без имени",
+                "payload": "name:unknown",
+                "intent": "default",
+            }
+        ]])
+        return "👤 Введи имя контактного лица:", kb
+
     async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка callback-запросов"""
         
@@ -389,19 +422,19 @@ class UnifiedDialogService:
             ctx.address_details = None
             ctx.state = DialogState.DESCRIPTION
             return (
-                "Принято, работа в мастерской.\n"
-                "Причина обращения со слов клиента:",
+                "Понял, работа в мастерской.\n"
+                "Опиши поломку со слов клиента.",
                 None,
             )
 
         if payload == "address_mode:enter_address" and ctx.state == DialogState.ADDRESS_MODE:
             ctx.state = DialogState.ADDRESS
-            return "Введите полный адрес (город, улица, дом).", None
+            return "Введи полный адрес (город, улица, дом):", None
 
         if payload == "address_details:private_house" and ctx.state == DialogState.ADDRESS_DETAILS:
             ctx.address_details = None
             ctx.state = DialogState.DESCRIPTION
-            return "Записно. Теперь напиши причину обращения со слов клиента:", None
+            return "✅ Адрес сохранен. Опиши поломку со слов клиента:", None
 
         # Выбор даты
         if payload.startswith("slot:") and ctx.state == DialogState.SLOT:
@@ -418,8 +451,15 @@ class UnifiedDialogService:
                 master = result.scalar_one_or_none()
                 master_id = master.id if master else None
             
+            # Проверяем, есть ли хоть один свободный слот на выбранную дату
+            if not await self._has_any_free_slot(master_id, date_str):
+                return (
+                    f"❌ На {ctx.date} нет свободных временных слотов.\nВыберите другую дату:",
+                    self._buttons_slot_dates()
+                )
+            
             return (
-                f"Выберите удобное время для {ctx.date}:",
+                f"Выбери доступное время для {ctx.date}:",
                 await self._buttons_time_slots(master_id, date_str),
             )
 
@@ -431,7 +471,7 @@ class UnifiedDialogService:
             except ValueError:
                 ctx.slot = rest
                 ctx.state = DialogState.NAME
-                return "Введите имя контактного лица", None
+                return self._ask_name()
 
             async with AsyncSessionLocal() as session:
                 result = await session.execute(
@@ -450,7 +490,13 @@ class UnifiedDialogService:
 
             ctx.slot = time_part
             ctx.state = DialogState.NAME
-            return "Введи имя контактного лица", None
+            return self._ask_name()
+
+        # Обработка кнопки "Неизвестно" для имени
+        if payload == "name:unknown" and ctx.state == DialogState.NAME:
+            ctx.name = "Без имени"
+            ctx.state = DialogState.PHONE
+            return "☎️ Введи номер контактного лица:", None
 
         return (
             "Команда уже не актуальна. Напиши, пожалуйста, текстом, что хочешь сделать.",
@@ -488,7 +534,7 @@ class UnifiedDialogService:
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
             return (
-                "Адрес записал.\n"
+                "✅ Адрес сохранен.\n"
                 "Уточни квартиру, этаж и подъезд. Например, кв1 п2 эт3\n"
                 "Если это частный дом, то нажми «Частный дом».",
                 self._buttons_private_house(),
@@ -498,7 +544,7 @@ class UnifiedDialogService:
             ctx.address = text_clean
             ctx.state = DialogState.ADDRESS_DETAILS
             return (
-                "Адрес записал.\n"
+                "✅ Адрес сохранен.\n"
                 "Уточни квартиру, этаж и подъезд. Например, кв1 п2 эт3\n"
                 "Если это частный дом, то нажми «Частный дом».",
                 self._buttons_private_house(),
@@ -510,30 +556,74 @@ class UnifiedDialogService:
             else:
                 ctx.address_details = text_clean
             ctx.state = DialogState.DESCRIPTION
-            return "Принял. Теперь напиши причину обращения (детально).", None
+            return "✅ Частный дом.\nНапиши причину бращения со слов клиента:", None
 
         # Ввод описания
         if ctx.state == DialogState.DESCRIPTION:
             ctx.description = text_clean
             ctx.state = DialogState.SLOT
             return (
-                "Принял описание. Когда удобно выполнить услугу?\n",
-                self._buttons_slot_dates(),
+                "✅ Принял описание. Выбери подходящую дату\n"
+                "Если подходящей даты нет в списке, введи её в формате ДД.ММ.ГГ (например, 31.12.24):",
+                self._buttons_slot_dates()
             )
 
-        # Если пользователь сам ввел дату/время текстом
-        if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
-            ctx.date_iso = None
-            ctx.date = None
-            ctx.slot = text_clean
-            ctx.state = DialogState.NAME
-            return "Введи имя контактного лица", None
+        # Обработка ручного ввода даты
+        if ctx.state == DialogState.SLOT:
+            iso_date = self._parse_date_from_text(text_clean)
+            if iso_date:
+                ctx.date_iso = iso_date
+                ctx.date = self._format_pretty_date(iso_date)
+                ctx.slot = None
+                ctx.state = DialogState.SLOT_TIME
+
+                async with AsyncSessionLocal() as session:
+                    result = await session.execute(
+                        select(Master).where(Master.max_user_id == user_id)
+                    )
+                    master = result.scalar_one_or_none()
+                    master_id = master.id if master else None
+
+                if not await self._has_any_free_slot(master_id, iso_date):
+                    return (
+                        f"❌ На {ctx.date} нет свободных временных слотов.\nПожалуйста, выберите другую дату:",
+                        self._buttons_slot_dates()
+                    )
+
+                return (
+                    f"Выбери удобное время для {ctx.date}:",
+                    await self._buttons_time_slots(master_id, iso_date)
+                )
+            else:
+                return (
+                    "Не удалось распознать дату. Используйте формат ДД.ММ.ГГ или ДД.ММ.ГГГГ.\n"
+                    "Например: 31.12.24 или 31.12.2024",
+                    self._buttons_slot_dates()
+                )
+
+        if ctx.state == DialogState.SLOT_TIME:
+            # Если пользователь вводит время текстом (не через кнопки), просим выбрать из кнопок
+            return (
+                "Пожалуйста, выберите время из кнопок ниже:",
+                await self._buttons_time_slots(master_id, ctx.date_iso)
+            )
+
+            # Если пользователь сам ввел дату/время текстом (не через кнопки)
+            # В текущей логике даты выбираются только кнопками, но оставим на всякий случай
+            if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
+                # Пытаемся распознать дату...
+                ctx.date_iso = None
+                ctx.date = None
+                ctx.slot = text_clean
+                ctx.state = DialogState.NAME
+                return self._ask_name()
 
         # Ввод имени
         if ctx.state == DialogState.NAME:
-            ctx.name = text_clean
+            # Если пришёл обычный текст (не callback)
+            ctx.name = text_clean if text_clean.strip() else "Без имени"
             ctx.state = DialogState.PHONE
-            return "Введи номер контактного лица.", None
+            return "☎️ Введи номер контактного лица.", None
 
         # Ввод телефона
         if ctx.state == DialogState.PHONE:
@@ -541,7 +631,8 @@ class UnifiedDialogService:
             if not normalized:
                 return (
                     "Похоже, номер в непонятном формате.\n"
-                    "Введи, пожалуйста, мобильный номер в формате 8ХХХХХХХХХХ или +7ХХХХХХХХХХ.",
+                    "Введи, пожалуйста, мобильный номер в формате 8ХХХХХХХХХХ или +7ХХХХХХХХХХ.\n"
+                    "Попробуй ещё раз:",
                     None,
                 )
             ctx.phone = normalized
@@ -563,7 +654,7 @@ class UnifiedDialogService:
                     "chat_id": user_id,
                     "client_id": None,
                     "client_name": ctx.name,
-                    "client_phone": ctx.phone,                    
+                    "client_phone": ctx.phone,
                     "service_title": "Заявка",
                     "problem_description": ctx.description,
                     "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
@@ -578,7 +669,7 @@ class UnifiedDialogService:
                     "payment_status": "unpaid",
                     "meta": None,
                     "master_id": master_id,
-                    "assigned_master_id": master_id,   # 👈 добавляем
+                    "assigned_master_id": master_id,   # создатель = исполнитель
                 }
 
                 req = await create_service_request(session, data)
@@ -587,16 +678,64 @@ class UnifiedDialogService:
 
             await notify_master_request_created(req.id)
 
-            kb = self._inline_keyboard([[
-                {
+            # ====== 1. Ряд: Добавить в календарь ======
+            row1 = []
+            date_iso_str = ctx.date_iso if ctx.date_iso else None
+            google_cal_url = _build_google_calendar_url(
+                order_no=req.id,
+                date_iso=date_iso_str,
+                time_slot=ctx.slot,
+                address=ctx.address,
+                address_details=ctx.address_details,
+                comment=ctx.description,
+                phone=ctx.phone,
+            )
+            if google_cal_url:
+                row1.append({
+                    "type": "link",
+                    "text": "📅 Добавить в календарь",
+                    "url": google_cal_url,
+                })
+            else:
+                # Если ссылка не сформирована (нет данных), можно показать заглушку или пропустить ряд
+                row1.append({
                     "type": "callback",
-                    "text": "Новая заявка",
-                    "payload": "menu:new_request",
-                    "intent": "default",
-                }
-            ]])
+                    "text": "❌ Нет данных для календаря",
+                    "payload": "noop",
+                })
 
-            reply = f"✅ Заявка №{req.id} успешно создана!\n\nНажмите на кнопку, чтобы создать новую."
+            # ====== 2. Ряд: Открыть в боте и Открыть в CRM ======
+            row2 = []
+
+            # Кнопка "Открыть в боте" (ссылка на ордер-бота)
+            order_bot_url = os.getenv("MAX_ORDER_BOT_LINK", "")            
+            row2.append({
+                "type": "link",
+                "text": "📋 Открыть заявки",
+                "url": order_bot_url,
+            })
+
+            # Кнопка "Открыть в CRM"
+            panel_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+            view_request_url = f"{panel_base}/requests/{req.id}"
+            row2.append({
+                "type": "link",
+                "text": "🌐 Перейти в CRM",
+                "url": view_request_url,
+            })
+
+            # ====== 3. Ряд: Создать новую заявку ======
+            row3 = [{
+                "type": "callback",
+                "text": "📝 Новая заявка",
+                "payload": "menu:new_request",
+                "intent": "default",
+            }]
+
+            # Формируем клавиатуру из трёх рядов
+            kb = self._inline_keyboard([row1, row2, row3])
+
+            reply = f"✅ Заявка №{req.id} успешно создана! Выберите действие:"
             self.reset(user_id)
             return reply, kb
 

@@ -133,11 +133,11 @@ async def notify_master_request_created(request_id: int) -> None:
         # Формирование текста сообщения (без изменений)
         lines: List[str] = [f"📝 ЗАЯВКА № {req.id}\n"]
 
-        if req.service_title or req.subtype:            
-            lines.append(f"🔧 Вид техники: {SUBTYPE_NAMES.get(req.subtype, req.subtype)}")
+        # if req.service_title or req.subtype:            
+        #    lines.append(f"🔧 Вид техники: {SUBTYPE_NAMES.get(req.subtype, req.subtype)}")
 
         if req.problem_description:
-            lines.append(f"📄 Описание: {req.problem_description}")
+            lines.append(f"📄 Причина обращения: {req.problem_description}")
 
         if req.address == "Мастерская":
             lines.append("🏭 Мастерская")
