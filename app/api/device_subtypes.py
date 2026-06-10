@@ -3,13 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.session import get_db
+from app.db.session import get_session   # ← исправлено: get_session вместо get_db
 from app.db.models import DeviceSubtype, DeviceCategory, Master
 from app.api.deps import get_current_master
 
 router = APIRouter(prefix="/api/device-categories", tags=["device-subtypes"])
 
-# Схемы Pydantic для валидации данных
+# Схемы Pydantic
 class DeviceSubtypeCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -45,11 +45,10 @@ class DeviceSubtypeOut(BaseModel):
 async def create_subtype(
     category_id: int,
     subtype_data: DeviceSubtypeCreate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    """Создает новую подкатегорию для указанной категории."""
-    # 1. Проверяем, существует ли категория и принадлежит ли она текущему мастеру
+    """Создаёт новую подкатегорию для указанной категории."""
     result = await db.execute(select(DeviceCategory).where(DeviceCategory.id == category_id))
     category = result.scalar_one_or_none()
     if not category:
@@ -57,7 +56,6 @@ async def create_subtype(
     if category.master_id != current_master.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
-    # 2. Создаем новую подкатегорию
     new_subtype = DeviceSubtype(
         **subtype_data.model_dump(),
         category_id=category_id,
@@ -71,7 +69,7 @@ async def create_subtype(
 @router.get("/{category_id}/subtypes", response_model=List[DeviceSubtypeOut])
 async def get_subtypes(
     category_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
     """Получает список всех подкатегорий для указанной категории."""
@@ -90,7 +88,7 @@ async def get_subtypes(
 async def update_subtype(
     subtype_id: int,
     update_data: DeviceSubtypeUpdate,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
     """Обновляет данные подкатегории."""
@@ -111,7 +109,7 @@ async def update_subtype(
 @router.delete("/subtypes/{subtype_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_subtype(
     subtype_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
     """Удаляет подкатегорию."""
