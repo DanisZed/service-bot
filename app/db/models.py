@@ -185,7 +185,6 @@ class DeviceCategory(Base):
     __tablename__ = "device_category"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    service_id = Column(String(10), ForeignKey("master.service_id", ondelete="CASCADE"), nullable=True)
     master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
@@ -199,7 +198,7 @@ class DeviceCategory(Base):
     subtypes = relationship("DeviceSubtype", back_populates="category")
 
     __table_args__ = (
-        UniqueConstraint('service_id', 'master_id', 'name'),
+        UniqueConstraint('master_id', 'name'),
     )
 
 
@@ -207,7 +206,6 @@ class DeviceSubtype(Base):
     __tablename__ = "device_subtype"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    service_id = Column(String(10), ForeignKey("master.service_id", ondelete="CASCADE"), nullable=True)
     master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), nullable=True)
     category_id = Column(Integer, ForeignKey("device_category.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
@@ -224,9 +222,8 @@ class DeviceSubtype(Base):
     category = relationship("DeviceCategory", back_populates="subtypes")
 
     __table_args__ = (
-        UniqueConstraint('service_id', 'master_id', 'category_id', 'name'),
+        UniqueConstraint('master_id', 'category_id', 'name'),
     )
-
 
 class LeadSource(Base):
     __tablename__ = "lead_source"
