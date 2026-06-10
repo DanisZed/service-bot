@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.db.models import Master
-from max_client import MaxClient  # пока не используем, но пусть будет
+from max_client import MaxClient
 
 import logging
 
@@ -32,12 +32,13 @@ MAX_SECOND_BOT_TOKEN = os.getenv("MAX_SECOND_BOT_TOKEN")
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
     "4gOWnBzTs7ec0HTS12rpErnILvUGq-ZyK2HFWsdBRK5QVAGQeQnEgp1fmjEmzzbn1v3TAu_i2GLQQ14z7Es3QA",
-)  # заменишь на свой
-
+)
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
+
 
 class CompleteRegistrationRequest(BaseModel):
     master_id: str
+
 
 class CompleteRegistrationResponse(BaseModel):
     success: bool
@@ -95,17 +96,11 @@ async def request_login_code_by_max(
     max_user_id: int = Query(..., description="user_id мастера в MAX"),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Генерирует login_code для мастера по max_user_id и возвращает ссылку
-    для входа в панель. Ничего никуда не отправляет — код используется
-    первым ботом в кнопке.
-    """
     result = await db.execute(
         select(Master).where(Master.max_user_id == max_user_id)
     )
     master = result.scalars().first()
 
-    # если не нашли — создаём мастера на лету
     if not master:
         master = Master(
             max_user_id=max_user_id,
@@ -123,14 +118,13 @@ async def request_login_code_by_max(
             detail="Master is inactive",
         )
 
-    code = f"{secrets.randbelow(999999):06d}"  # 6-значный код
+    code = f"{secrets.randbelow(999999):06d}"
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     master.login_code = code
     master.login_code_expires_at = expires_at
     await db.commit()
 
-    # актуальный URL панели из env, по умолчанию — боевой домен
     frontend_base = os.getenv("FRONTEND_BASE_URL", "https://panel.master-rbt-crm.ru")
     login_url = f"{frontend_base}/login?code={code}"
 
@@ -143,10 +137,6 @@ async def verify_login_code(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Проверяет код из MAX, обнуляет его и выдаёт JWT для мастера.
-    Параллельно ставит JWT в HttpOnly-куку access_token.
-    """
     code = payload.code.strip()
     if not code:
         raise HTTPException(status_code=400, detail="Empty code")
@@ -168,7 +158,6 @@ async def verify_login_code(
     if expires_at < now:
         raise HTTPException(status_code=400, detail="Code expired")
 
-    # одноразовый код: очищаем
     master.login_code = None
     master.login_code_expires_at = None
     await db.commit()
@@ -180,14 +169,13 @@ async def verify_login_code(
     }
     access_token = jwt.encode(payload_jwt, SECRET_KEY, algorithm="HS256")
 
-    # ставим токен в куку
     response.set_cookie(
         key=ACCESS_TOKEN_COOKIE_NAME,
         value=access_token,
         httponly=True,
-        secure=False,  # включишь True на https
+        secure=False,
         samesite="lax",
-        max_age=60 * 60 * 24 * 7,  # 7 дней
+        max_age=60 * 60 * 24 * 7,
     )
 
     return TokenOut(
@@ -205,10 +193,6 @@ async def get_current_master(
     ),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Возвращает данные текущего мастера по JWT в куке.
-    Если токена нет/он невалиден — 401 (гостевой режим на фронте).
-    """
     if not access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -231,35 +215,42 @@ async def complete_registration(
     request: CompleteRegistrationRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Завершает регистрацию мастера после активации в боте"""
-    
     result = await db.execute(
         select(Master).where(Master.master_id == request.master_id)
     )
     master = result.scalar_one_or_none()
-    
+
     if not master:
         raise HTTPException(status_code=404, detail="Master not found")
-    
+
     if master.is_active != 1:
         raise HTTPException(status_code=400, detail="Master not activated yet")
-    
-    # Генерируем токен для входа
+
+    # Получаем имя сервисного центра (если есть)
+    service_name = ""
+    if master.service_center:
+        service_name = master.service_center.service_name
+    display_name = master.name or service_name or ""
+
     from app.services.token_service import create_access_token
+
     access_token = create_access_token(
-        data={"sub": str(master.id), "master_id": master.master_id, "role": "admin" if master.is_admin else "master"}
+        data={
+            "sub": str(master.id),
+            "master_id": master.master_id,
+            "role": "admin" if master.is_admin else "master",
+        }
     )
-    
-    # Устанавливаем куку
+
     response = CompleteRegistrationResponse(
         success=True,
         master_id=master.master_id,
-        name=master.name or master.service_name or "",
+        name=display_name,
         role="Администратор" if master.is_admin else "Мастер",
     )
-    
-    # Создаем Response с установкой куки
+
     from fastapi.responses import JSONResponse
+
     resp = JSONResponse(content=response.dict())
     resp.set_cookie(
         key="access_token",
@@ -269,14 +260,11 @@ async def complete_registration(
         samesite="lax",
         secure=True,
     )
-    
-    return resp   
+
+    return resp
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(response: Response):
-    """
-    Logout мастера: удаляем куку с токеном.
-    """
     response.delete_cookie(ACCESS_TOKEN_COOKIE_NAME)
     return {"detail": "Logged out"}

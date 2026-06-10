@@ -1,4 +1,3 @@
-# app/api/ad_budgets.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
@@ -50,11 +49,13 @@ async def get_budgets(
 ):
     """Получить все расходы текущего мастера/сервиса"""
     # Определяем условие для фильтрации
-    if current_master.is_admin == 1 and current_master.service_id:
+    if current_master.is_admin == 1:
+        if not current_master.service_center:
+            return []
         stmt = select(AdBudget).join(
             LeadSource, AdBudget.source_id == LeadSource.id
         ).where(
-            LeadSource.service_id == current_master.service_id
+            LeadSource.service_id == current_master.service_center.service_id
         ).order_by(AdBudget.budget_date.desc())
     else:
         stmt = select(AdBudget).join(
@@ -66,7 +67,7 @@ async def get_budgets(
     result = await db.execute(stmt)
     budgets = result.scalars().all()
     
-    # Добавляем название источника
+    # Добавляем название источника (можно сделать через eager load, но для простоты оставим)
     output = []
     for b in budgets:
         source_result = await db.execute(select(LeadSource).where(LeadSource.id == b.source_id))
@@ -98,6 +99,14 @@ async def create_budget(
     
     if not source:
         raise HTTPException(status_code=404, detail="Источник не найден")
+    
+    # Проверка прав: мастер может создать бюджет только для своих источников или источников своего сервиса (если админ)
+    if current_master.is_admin == 1:
+        if not current_master.service_center or source.service_id != current_master.service_center.service_id:
+            raise HTTPException(status_code=403, detail="Нет прав для этого источника")
+    else:
+        if source.master_id != current_master.id:
+            raise HTTPException(status_code=403, detail="Нет прав для этого источника")
     
     # Проверяем, что источник рекламируемый
     if not source.is_advertisable:
@@ -150,17 +159,48 @@ async def update_budget(
     if not budget:
         raise HTTPException(status_code=404, detail="Расход не найден")
     
+    # Проверка прав: нужно проверить, что бюджет относится к источнику, доступному текущему мастеру
+    source_result = await db.execute(select(LeadSource).where(LeadSource.id == budget.source_id))
+    source = source_result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Источник не найден")
+    
+    if current_master.is_admin == 1:
+        if not current_master.service_center or source.service_id != current_master.service_center.service_id:
+            raise HTTPException(status_code=403, detail="Нет прав")
+    else:
+        if source.master_id != current_master.id:
+            raise HTTPException(status_code=403, detail="Нет прав")
+    
     if payload.source_id is not None:
         # Проверяем новый источник
-        source_result = await db.execute(select(LeadSource).where(LeadSource.id == payload.source_id))
-        source = source_result.scalar_one_or_none()
-        if not source:
+        new_source_result = await db.execute(select(LeadSource).where(LeadSource.id == payload.source_id))
+        new_source = new_source_result.scalar_one_or_none()
+        if not new_source:
             raise HTTPException(status_code=404, detail="Источник не найден")
-        if not source.is_advertisable:
+        if not new_source.is_advertisable:
             raise HTTPException(status_code=400, detail="Источник не помечен как рекламируемый")
+        # Проверка прав на новый источник
+        if current_master.is_admin == 1:
+            if not current_master.service_center or new_source.service_id != current_master.service_center.service_id:
+                raise HTTPException(status_code=403, detail="Нет прав для нового источника")
+        else:
+            if new_source.master_id != current_master.id:
+                raise HTTPException(status_code=403, detail="Нет прав для нового источника")
         budget.source_id = payload.source_id
     
     if payload.budget_date is not None:
+        # Проверяем уникальность при смене даты
+        if payload.budget_date != budget.budget_date:
+            existing = await db.execute(
+                select(AdBudget).where(
+                    AdBudget.source_id == budget.source_id,
+                    AdBudget.budget_date == payload.budget_date,
+                    AdBudget.id != budget_id
+                )
+            )
+            if existing.scalar_one_or_none():
+                raise HTTPException(status_code=400, detail="Расход на эту дату уже существует")
         budget.budget_date = payload.budget_date
     if payload.amount is not None:
         budget.amount = payload.amount
@@ -171,13 +211,13 @@ async def update_budget(
     await db.refresh(budget)
     
     # Получаем имя источника
-    source_result = await db.execute(select(LeadSource).where(LeadSource.id == budget.source_id))
-    source = source_result.scalar_one_or_none()
+    final_source_result = await db.execute(select(LeadSource).where(LeadSource.id == budget.source_id))
+    final_source = final_source_result.scalar_one_or_none()
     
     return AdBudgetOut(
         id=budget.id,
         source_id=budget.source_id,
-        source_name=source.name if source else None,
+        source_name=final_source.name if final_source else None,
         budget_date=budget.budget_date,
         amount=budget.amount,
         currency=budget.currency,
@@ -198,6 +238,17 @@ async def delete_budget(
     
     if not budget:
         raise HTTPException(status_code=404, detail="Расход не найден")
+    
+    # Проверка прав
+    source_result = await db.execute(select(LeadSource).where(LeadSource.id == budget.source_id))
+    source = source_result.scalar_one_or_none()
+    if source:
+        if current_master.is_admin == 1:
+            if not current_master.service_center or source.service_id != current_master.service_center.service_id:
+                raise HTTPException(status_code=403, detail="Нет прав")
+        else:
+            if source.master_id != current_master.id:
+                raise HTTPException(status_code=403, detail="Нет прав")
     
     await db.delete(budget)
     await db.commit()
