@@ -69,9 +69,9 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
         client_name=data.get("client_name"),
         client_phone=data.get("client_phone"),
 
-        main_category=data["main_category"],
-        subtype=data["subtype"],
-        custom_device=data.get("custom_device"),
+        main_category=data["main_category", "Указать"],
+        subtype=data["subtype", "Указать"],
+        custom_device=data.get("custom_device", "Указать"),
 
         service_title=data.get("service_title"),
         problem_description=data["problem_description"],
