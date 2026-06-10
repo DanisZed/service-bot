@@ -19,19 +19,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade():
-    # Удаляем внешние ключи
-    op.drop_constraint('device_category_service_id_fkey', 'device_category', type_='foreignkey')
-    op.drop_constraint('device_subtype_service_id_fkey', 'device_subtype', type_='foreignkey')
-    
-    # Удаляем уникальные ограничения
+    # 1. Удаляем внешние ключи, если они существуют
+    op.execute("ALTER TABLE device_category DROP CONSTRAINT IF EXISTS device_category_service_id_fkey")
+    op.execute("ALTER TABLE device_subtype DROP CONSTRAINT IF EXISTS device_subtype_service_id_fkey")
+
+    # 2. Удаляем уникальные ограничения (здесь они точно существуют, их можно удалять без if_exists)
     op.drop_constraint('device_category_service_id_master_id_name_key', 'device_category', type_='unique')
     op.drop_constraint('device_subtype_service_id_master_id_category_id_name_key', 'device_subtype', type_='unique')
-    
-    # Удаляем колонки service_id
+
+    # 3. Удаляем колонки service_id
     op.drop_column('device_category', 'service_id')
     op.drop_column('device_subtype', 'service_id')
-    
-    # Добавляем новые уникальные ограничения (без service_id)
+
+    # 4. Создаём новые уникальные ограничения
     op.create_unique_constraint('uq_device_category_master_name', 'device_category', ['master_id', 'name'])
     op.create_unique_constraint('uq_device_subtype_master_category_name', 'device_subtype', ['master_id', 'category_id', 'name'])
 
