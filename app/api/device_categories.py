@@ -38,21 +38,11 @@ async def get_categories(
     current_master: Master = Depends(get_current_master),
 ):
     """Получить список категорий устройств для текущего мастера/админа"""
-    
-    if current_master.is_admin == 1:
-        # Админ видит категории своего сервис-центра (по service_id)
-        if not current_master.service_center:
-            return []
-        stmt = select(DeviceCategory).where(
-            DeviceCategory.service_id == current_master.service_center.service_id,
-            DeviceCategory.is_active == True
-        ).order_by(DeviceCategory.sort_order, DeviceCategory.name)
-    else:
-        # Обычный мастер видит свои личные категории
-        stmt = select(DeviceCategory).where(
-            DeviceCategory.master_id == current_master.id,
-            DeviceCategory.is_active == True
-        ).order_by(DeviceCategory.sort_order, DeviceCategory.name)
+    # Для админа – категории, созданные им самим (или можно сделать общими для сервис-центра, но пока по master_id)
+    stmt = select(DeviceCategory).where(
+        DeviceCategory.master_id == current_master.id,
+        DeviceCategory.is_active == True
+    ).order_by(DeviceCategory.sort_order, DeviceCategory.name)
     
     result = await db.execute(stmt)
     categories = result.scalars().all()
@@ -75,24 +65,13 @@ async def create_category(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    """Создать новую категорию (только для админа сервиса или мастера)"""
-    
-    if current_master.is_admin == 1:
-        if not current_master.service_center:
-            raise HTTPException(status_code=400, detail="У администратора нет сервис-центра")
-        service_id = current_master.service_center.service_id
-        master_id = None
-    else:
-        service_id = None
-        master_id = current_master.id
-    
+    """Создать новую категорию"""
     category = DeviceCategory(
         name=payload.name,
         description=payload.description,
         sort_order=payload.sort_order,
         is_active=True,
-        service_id=service_id,
-        master_id=master_id,
+        master_id=current_master.id,
     )
     db.add(category)
     await db.commit()
@@ -114,20 +93,13 @@ async def update_category(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    """Обновить категорию (только владелец или админ сервиса)"""
-    
+    """Обновить категорию (только владелец)"""
     result = await db.execute(select(DeviceCategory).where(DeviceCategory.id == category_id))
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Категория не найдена")
-    
-    # Проверка прав
-    if current_master.is_admin == 1:
-        if not current_master.service_center or category.service_id != current_master.service_center.service_id:
-            raise HTTPException(status_code=403, detail="Нет прав на редактирование")
-    else:
-        if category.master_id != current_master.id:
-            raise HTTPException(status_code=403, detail="Нет прав на редактирование")
+    if category.master_id != current_master.id:
+        raise HTTPException(status_code=403, detail="Нет прав на редактирование")
     
     if payload.name is not None:
         category.name = payload.name
@@ -140,7 +112,6 @@ async def update_category(
     
     await db.commit()
     await db.refresh(category)
-    
     return DeviceCategoryOut(
         id=category.id,
         name=category.name,
@@ -156,19 +127,13 @@ async def delete_category(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    """Удалить категорию (только владелец или админ сервиса)"""
-    
+    """Удалить категорию (только владелец)"""
     result = await db.execute(select(DeviceCategory).where(DeviceCategory.id == category_id))
     category = result.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Категория не найдена")
-    
-    if current_master.is_admin == 1:
-        if not current_master.service_center or category.service_id != current_master.service_center.service_id:
-            raise HTTPException(status_code=403, detail="Нет прав на удаление")
-    else:
-        if category.master_id != current_master.id:
-            raise HTTPException(status_code=403, detail="Нет прав на удаление")
+    if category.master_id != current_master.id:
+        raise HTTPException(status_code=403, detail="Нет прав на удаление")
     
     await db.delete(category)
     await db.commit()
