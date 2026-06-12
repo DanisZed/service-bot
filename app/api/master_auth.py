@@ -133,12 +133,8 @@ async def request_login_code_by_max(
     return RequestCodeByMaxOut(code=code, login_url=login_url)
 
 @router.options("/verify-code")
-async def options_verify_code():
-    return Response(status_code=200, headers={
-        "Access-Control-Allow-Origin": "*",  # или конкретный домен
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-    })
+async def preflight_verify_code():
+    return Response(status_code=200)
 
 
 @router.post("/verify-code", response_model=TokenOut)
