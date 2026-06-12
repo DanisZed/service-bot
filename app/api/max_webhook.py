@@ -326,24 +326,37 @@ async def _handle_login_deeplink(max_user_id: int) -> str:
     client = MaxClient()
     try:
         text = (
-            "🔑 Код для входа в панель мастера:\n\n"
+            "🔐 **Вход в панель мастера**\n\n"
+            f"Ваш одноразовый код:\n"
             f"`{code}`\n\n"
-            "Скопируйте этот код и введите его на странице авторизации.\n"
-            "Срок действия кода — 10 минут."
+            "Нажмите на кнопку ниже, чтобы скопировать код.\n"
+            "Введите его на странице авторизации.\n"
+            "⏱ Код действителен **10 минут**."
         )
+        attachments = [
+            {
+                "type": "inline_keyboard",
+                "payload": {
+                    "buttons": [
+                        [
+                            {
+                                "type": "clipboard",
+                                "text": "📋 Копировать код",
+                                "payload": code,
+                            }
+                        ]
+                    ]
+                },
+            }
+        ]
         await client.send_text_to_user(
             user_id=max_user_id,
             text=text,
-            attachments=None,
+            attachments=attachments,
         )
     finally:
         await client.close()
-
-    # Это текст, который вернётся как ответ на диплинк (можно сделать коротким)
-    return (
-        "Я отправил вам одноразовый код для входа.\n"
-        "Откройте это сообщение, скопируйте код и введите его на сайте."
-    )
+        
 
 @router.post("/max/webhook")
 async def max_webhook(
