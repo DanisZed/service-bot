@@ -3,6 +3,7 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from fastapi import Response
 
 import jwt
 from jwt import InvalidTokenError
@@ -130,6 +131,14 @@ async def request_login_code_by_max(
     login_url = f"{frontend_base}/login?code={code}"
 
     return RequestCodeByMaxOut(code=code, login_url=login_url)
+
+@router.options("/verify-code")
+async def options_verify_code():
+    return Response(status_code=200, headers={
+        "Access-Control-Allow-Origin": "*",  # или конкретный домен
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+    })
 
 
 @router.post("/verify-code", response_model=TokenOut)
