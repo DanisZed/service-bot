@@ -10,6 +10,8 @@ from app.services.max_commands import handle_command  # обработка /pane
 from app.db.models import Master
 from app.db.session import AsyncSessionLocal
 from sqlalchemy import select
+import random
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -244,6 +246,11 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
     if isinstance(payload, str) and payload.strip().lower() == "panel":
         # уже было
         reply_text, attachments = await handle_command(user_id, "/panel")
+
+    elif isinstance(payload, str) and payload.strip().lower() == "login":
+        # 🔥 НОВАЯ ВЕТКА
+        reply_text = await _handle_login_deeplink(user_id)
+        attachments = None    
 
     elif isinstance(payload, str) and payload.strip().lower() == "activate":
         # НОВОЕ: диплинк ?start=activate
