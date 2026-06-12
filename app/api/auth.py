@@ -15,7 +15,7 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
- @router.post("/auth/verify-code")
+@router.post("/auth/verify-code")
 async def login_by_code(payload: LoginByCodeInput):
     code = payload.code.strip()
 
