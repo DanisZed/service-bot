@@ -12,6 +12,7 @@ from app.api.requests import router as requests_router
 from app.api.master_auth import router as master_auth_router
 from app.api.max_webhook import router as max_webhook_router
 from app.api.order_webhook import router as order_webhook_router
+
 from app.api import masters as masters_router
 from app.api import manage_master as manage_master_router
 from app.api import device_categories as device_categories_router
