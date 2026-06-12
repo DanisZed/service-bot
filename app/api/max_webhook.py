@@ -189,6 +189,10 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
         payload=payload,
     )
 
+    # 0b) НОВОЕ: диплинк start=login – генерируем код и отправляем его
+    if reply_text is None and isinstance(payload, str) and payload.strip().lower() == "login":
+        reply_text = await _handle_login_deeplink(user_id)
+
     client = MaxClient()
     try:
         message_out: Dict[str, Any] = {"text": reply_text}
