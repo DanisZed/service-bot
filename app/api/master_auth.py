@@ -1,15 +1,18 @@
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Query, Cookie
-from fastapi.responses import RedirectResponse
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query, Cookie, Body
+from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.db.models import Master
+
+import jwt
+from jwt import InvalidTokenError
 
 router = APIRouter(prefix="/api/master/auth", tags=["master-auth"])
 
@@ -50,17 +53,20 @@ class CompleteRegistrationResponse(BaseModel):
     message: Optional[str] = None
 
 
+class VerifyCodeRequest(BaseModel):
+    code: str
+
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
 
 
-def _now():
+def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
 def _create_access_token(master: Master) -> str:
-    import jwt
     payload = {
         "sub": str(master.id),
         "role": "admin" if getattr(master, "is_admin", False) else "master",
@@ -82,8 +88,6 @@ def _encode_cookie(response: Response, token: str):
 
 
 def _decode_master_id_from_token(token: str) -> int:
-    import jwt
-    from jwt import InvalidTokenError
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
     except InvalidTokenError:
@@ -116,9 +120,11 @@ async def generate_panel_token(
         await db.refresh(master)
 
     if not master.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Master is inactive")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Master is inactive",
+        )
 
-    import jwt
     payload = {
         "sub": str(master.id),
         "exp": _now() + timedelta(hours=24),
@@ -135,9 +141,6 @@ async def consume_panel_token(
     token: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    import jwt
-    from jwt import InvalidTokenError
-
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
     except InvalidTokenError:
@@ -153,7 +156,6 @@ async def consume_panel_token(
         raise HTTPException(status_code=401, detail="Master not found or inactive")
 
     access_token = _create_access_token(master)
-
     resp = RedirectResponse(url=f"{PANEL_BASE_URL}/app/dashboard", status_code=302)
     _encode_cookie(resp, access_token)
     return resp
@@ -161,15 +163,14 @@ async def consume_panel_token(
 
 @router.post("/verify-code", response_model=TokenOut)
 async def verify_code(
-    code: str,
+    payload: VerifyCodeRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    code = code.strip()
+    code = payload.code.strip()
     if not code:
         raise HTTPException(status_code=400, detail="Empty code")
 
-    from datetime import timezone as tz
     result = await db.execute(select(Master).where(Master.login_code == code))
     master = result.scalar_one_or_none()
     if not master:
@@ -180,7 +181,7 @@ async def verify_code(
         raise HTTPException(status_code=400, detail="Code expired")
 
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=tz.utc)
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
 
     if expires_at < _now():
         raise HTTPException(status_code=400, detail="Code expired")
@@ -202,7 +203,9 @@ async def verify_code(
 
 @router.get("/me", response_model=MasterMeOut)
 async def get_current_master(
-    access_token: Optional[str] = Cookie(default=None, alias=ACCESS_TOKEN_COOKIE_NAME),
+    access_token: Optional[str] = Cookie(
+        default=None, alias=ACCESS_TOKEN_COOKIE_NAME
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     if not access_token:
@@ -226,10 +229,9 @@ async def complete_registration(
     request: CompleteRegistrationRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from app.api.masters import router as masters_router
-
-    result = await db.execute(select(Master).where(Master.master_id == request.master_id))
+    result = await db.execute(
+        select(Master).where(Master.master_id == request.master_id)
+    )
     master = result.scalar_one_or_none()
 
     if not master:
@@ -244,6 +246,7 @@ async def complete_registration(
     display_name = master.name or service_name or ""
 
     from app.services.token_service import create_access_token
+
     access_token = create_access_token(
         data={
             "sub": str(master.id),
@@ -252,15 +255,14 @@ async def complete_registration(
         }
     )
 
-    response = CompleteRegistrationResponse(
+    response_data = CompleteRegistrationResponse(
         success=True,
         master_id=master.master_id,
         name=display_name,
         role="Администратор" if master.is_admin else "Мастер",
     )
 
-    from fastapi.responses import JSONResponse
-    resp = JSONResponse(content=response.model_dump())
+    resp = JSONResponse(content=response_data.model_dump())
     resp.set_cookie(
         key=ACCESS_TOKEN_COOKIE_NAME,
         value=access_token,
