@@ -10,7 +10,7 @@ from app.services.max_commands import handle_command  # обработка /pane
 from app.db.models import Master
 from app.db.session import AsyncSessionLocal
 from sqlalchemy import select
-import random
+import secrets
 from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
@@ -315,7 +315,7 @@ async def _handle_login_deeplink(max_user_id: int) -> str:
             )
 
         # Генерируем 6‑значный код
-        code = f"{random.randint(0, 999999):06d}"
+        code = f"{secrets.randbelow(1000000):06d}"
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
         master.login_code = code
@@ -356,7 +356,7 @@ async def _handle_login_deeplink(max_user_id: int) -> str:
         )
     finally:
         await client.close()
-        
+
 
 @router.post("/max/webhook")
 async def max_webhook(

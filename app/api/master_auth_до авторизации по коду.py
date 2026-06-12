@@ -1,41 +1,41 @@
+# master_auth.py
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Response, status, Query, Cookie
-from fastapi.responses import RedirectResponse
+from fastapi import Response
+
+import jwt
+from jwt import InvalidTokenError
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Response,
+    status,
+    Query,
+    Cookie,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
 from app.db.models import Master
+from max_client import MaxClient
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/master/auth", tags=["master-auth"])
 
+MAX_SECOND_BOT_TOKEN = os.getenv("MAX_SECOND_BOT_TOKEN")
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
     "4gOWnBzTs7ec0HTS12rpErnILvUGq-ZyK2HFWsdBRK5QVAGQeQnEgp1fmjEmzzbn1v3TAu_i2GLQQ14z7Es3QA",
 )
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
-PANEL_BASE_URL = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
-
-
-class PanelTokenOut(BaseModel):
-    login_url: str
-
-
-class TokenOut(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    master_id: int
-    name: Optional[str] = None
-
-
-class MasterMeOut(BaseModel):
-    master_id: int
-    name: Optional[str] = None
-    plan: Optional[str] = None
 
 
 class CompleteRegistrationRequest(BaseModel):
@@ -55,142 +55,134 @@ async def get_db():
         yield session
 
 
-def _now():
-    return datetime.now(timezone.utc)
+class VerifyCodeRequest(BaseModel):
+    code: str
 
 
-def _create_access_token(master: Master) -> str:
-    import jwt
-    payload = {
-        "sub": str(master.id),
-        "role": "admin" if getattr(master, "is_admin", False) else "master",
-        "exp": _now() + timedelta(days=7),
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    master_id: int
+    name: Optional[str] = None
 
 
-def _encode_cookie(response: Response, token: str):
-    response.set_cookie(
-        key=ACCESS_TOKEN_COOKIE_NAME,
-        value=token,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        max_age=60 * 60 * 24 * 7,
-        path="/",
-    )
+class RequestCodeByMaxOut(BaseModel):
+    code: str
+    login_url: str
+
+
+class MasterMeOut(BaseModel):
+    master_id: int
+    name: Optional[str] = None
+    plan: Optional[str] = None
 
 
 def _decode_master_id_from_token(token: str) -> int:
-    import jwt
-    from jwt import InvalidTokenError
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
     except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    if payload.get("role") not in {"master", "admin"}:
+
+    if payload.get("role") != "master":
         raise HTTPException(status_code=403, detail="Invalid role")
+
+    sub = payload.get("sub")
     try:
-        return int(payload.get("sub"))
+        return int(sub)
     except (TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
 
-@router.get("/panel-token", response_model=PanelTokenOut)
-async def generate_panel_token(
-    max_user_id: int = Query(...),
+@router.post("/request-code-by-max", response_model=RequestCodeByMaxOut)
+async def request_login_code_by_max(
+    max_user_id: int = Query(..., description="user_id мастера в MAX"),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Master).where(Master.max_user_id == max_user_id))
-    master = result.scalar_one_or_none()
+    result = await db.execute(
+        select(Master).where(Master.max_user_id == max_user_id)
+    )
+    master = result.scalars().first()
 
     if not master:
         master = Master(
             max_user_id=max_user_id,
             is_active=1,
             plan="free",
-            created_at=_now(),
+            created_at=datetime.now(timezone.utc),
         )
         db.add(master)
         await db.commit()
         await db.refresh(master)
 
     if not master.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Master is inactive")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Master is inactive",
+        )
 
-    import jwt
-    payload = {
-        "sub": str(master.id),
-        "exp": _now() + timedelta(hours=24),
-        "type": "max_auto_login",
-    }
-    token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    code = f"{secrets.randbelow(999999):06d}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
-    login_url = f"{PANEL_BASE_URL}/panel?token={token}"
-    return PanelTokenOut(login_url=login_url)
+    master.login_code = code
+    master.login_code_expires_at = expires_at
+    await db.commit()
 
+    frontend_base = os.getenv("FRONTEND_BASE_URL", "https://panel.master-rbt-crm.ru")
+    login_url = f"{frontend_base}/login?code={code}"
 
-@router.get("/panel/consume")
-async def consume_panel_token(
-    token: str = Query(...),
-    db: AsyncSession = Depends(get_db),
-):
-    import jwt
-    from jwt import InvalidTokenError
+    return RequestCodeByMaxOut(code=code, login_url=login_url)
 
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    except InvalidTokenError:
-        raise HTTPException(status_code=400, detail="Invalid token")
-
-    if payload.get("type") != "max_auto_login":
-        raise HTTPException(status_code=400, detail="Invalid token type")
-
-    master_id = int(payload.get("sub"))
-    result = await db.execute(select(Master).where(Master.id == master_id))
-    master = result.scalar_one_or_none()
-    if not master or not master.is_active:
-        raise HTTPException(status_code=401, detail="Master not found or inactive")
-
-    access_token = _create_access_token(master)
-
-    resp = RedirectResponse(url=f"{PANEL_BASE_URL}/app/dashboard", status_code=302)
-    _encode_cookie(resp, access_token)
-    return resp
+@router.options("/verify-code")
+async def preflight_verify_code():
+    return Response(status_code=200)
 
 
 @router.post("/verify-code", response_model=TokenOut)
-async def verify_code(
-    code: str,
+async def verify_login_code(
+    payload: VerifyCodeRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    code = code.strip()
+    code = payload.code.strip()
     if not code:
         raise HTTPException(status_code=400, detail="Empty code")
 
-    from datetime import timezone as tz
     result = await db.execute(select(Master).where(Master.login_code == code))
-    master = result.scalar_one_or_none()
+    master = result.scalars().first()
     if not master:
         raise HTTPException(status_code=400, detail="Invalid code")
 
     expires_at = master.login_code_expires_at
-    if not expires_at:
+    if not isinstance(expires_at, datetime):
         raise HTTPException(status_code=400, detail="Code expired")
 
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=tz.utc)
+    now = datetime.now(timezone.utc)
 
-    if expires_at < _now():
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at < now:
         raise HTTPException(status_code=400, detail="Code expired")
 
     master.login_code = None
     master.login_code_expires_at = None
     await db.commit()
 
-    access_token = _create_access_token(master)
-    _encode_cookie(response, access_token)
+    payload_jwt = {
+        "sub": str(master.id),
+        "role": "master",
+        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+    }
+    access_token = jwt.encode(payload_jwt, SECRET_KEY, algorithm="HS256")
+
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
+    )
 
     return TokenOut(
         access_token=access_token,
@@ -202,15 +194,18 @@ async def verify_code(
 
 @router.get("/me", response_model=MasterMeOut)
 async def get_current_master(
-    access_token: Optional[str] = Cookie(default=None, alias=ACCESS_TOKEN_COOKIE_NAME),
+    access_token: Optional[str] = Cookie(
+        default=None, alias=ACCESS_TOKEN_COOKIE_NAME
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     if not access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     master_id = _decode_master_id_from_token(access_token)
+
     result = await db.execute(select(Master).where(Master.id == master_id))
-    master = result.scalar_one_or_none()
+    master = result.scalars().first()
     if not master or not master.is_active:
         raise HTTPException(status_code=401, detail="Master not found or inactive")
 
@@ -226,10 +221,9 @@ async def complete_registration(
     request: CompleteRegistrationRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from app.api.masters import router as masters_router
-
-    result = await db.execute(select(Master).where(Master.master_id == request.master_id))
+    result = await db.execute(
+        select(Master).where(Master.master_id == request.master_id)
+    )
     master = result.scalar_one_or_none()
 
     if not master:
@@ -238,12 +232,14 @@ async def complete_registration(
     if master.is_active != 1:
         raise HTTPException(status_code=400, detail="Master not activated yet")
 
+    # Получаем имя сервисного центра (если есть)
     service_name = ""
     if master.service_center:
         service_name = master.service_center.service_name
     display_name = master.name or service_name or ""
 
     from app.services.token_service import create_access_token
+
     access_token = create_access_token(
         data={
             "sub": str(master.id),
@@ -260,20 +256,21 @@ async def complete_registration(
     )
 
     from fastapi.responses import JSONResponse
-    resp = JSONResponse(content=response.model_dump())
+
+    resp = JSONResponse(content=response.dict())
     resp.set_cookie(
-        key=ACCESS_TOKEN_COOKIE_NAME,
+        key="access_token",
         value=access_token,
         httponly=True,
         max_age=3600 * 24 * 7,
         samesite="lax",
         secure=True,
-        path="/",
     )
+
     return resp
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(response: Response):
-    response.delete_cookie(ACCESS_TOKEN_COOKIE_NAME, path="/")
+    response.delete_cookie(ACCESS_TOKEN_COOKIE_NAME)
     return {"detail": "Logged out"}
