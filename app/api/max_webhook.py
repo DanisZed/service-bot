@@ -77,6 +77,10 @@ async def handle_message_created(event: Dict[str, Any]) -> None:
     if isinstance(payload, str) and payload.strip().lower() == "panel":
         reply_text, attachments = await handle_command(user_id, "/panel")
 
+    # 0b) НОВОЕ: диплинк start=login – генерируем код и отправляем его
+    if reply_text is None and isinstance(payload, str) and payload.strip().lower() == "login":
+        reply_text = await _handle_login_deeplink(user_id)    
+
     # НОВОЕ: диплинк start=activate -> показать кнопку "Начать"
     if reply_text is None and isinstance(payload, str) and payload.strip().lower() == "activate":
         reply_text = (
@@ -281,6 +285,54 @@ async def handle_bot_started(event: Dict[str, Any]) -> None:
     finally:
         await client.close()
 
+# app/api/max_webhook.py (рядом с handler'ами)
+
+async def _handle_login_deeplink(max_user_id: int) -> str:
+    # Ищем мастера по max_user_id
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Master).where(Master.max_user_id == max_user_id)
+        )
+        master: Master | None = result.scalar_one_or_none()
+
+        if master is None:
+            # нет мастера → просим сначала пройти регистрацию
+            return (
+                "Кажется, вы ещё не зарегистрированы как мастер.\n"
+                "Сначала пройдите регистрацию в диспетчерском боте, "
+                "а затем снова нажмите «Получить код для входа» на сайте."
+            )
+
+        # Генерируем 6‑значный код
+        code = f"{random.randint(0, 999999):06d}"
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+        master.login_code = code
+        master.login_code_expires_at = expires_at
+        await session.commit()
+
+    # Отправляем код пользователю в этом же боте
+    client = MaxClient()
+    try:
+        text = (
+            "🔑 Код для входа в панель мастера:\n\n"
+            f"`{code}`\n\n"
+            "Скопируйте этот код и введите его на странице авторизации.\n"
+            "Срок действия кода — 10 минут."
+        )
+        await client.send_text_to_user(
+            user_id=max_user_id,
+            text=text,
+            attachments=None,
+        )
+    finally:
+        await client.close()
+
+    # Это текст, который вернётся как ответ на диплинк (можно сделать коротким)
+    return (
+        "Я отправил вам одноразовый код для входа.\n"
+        "Откройте это сообщение, скопируйте код и введите его на сайте."
+    )
 
 @router.post("/max/webhook")
 async def max_webhook(

@@ -15,6 +15,36 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+ @router.post("/auth/login-by-code")
+async def login_by_code(payload: LoginByCodeInput):
+    code = payload.code.strip()
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Master).where(Master.login_code == code)
+        )
+        master: Master | None = result.scalar_one_or_none()
+
+        if master is None:
+            raise HTTPException(status_code=400, detail="Неверный код")
+
+        if not master.login_code_expires_at:
+            raise HTTPException(status_code=400, detail="Код не активен")
+
+        now = datetime.now(timezone.utc)
+        if master.login_code_expires_at < now:
+            raise HTTPException(status_code=400, detail="Код истёк")
+
+        # всё ок → очищаем код
+        master.login_code = None
+        master.login_code_expires_at = None
+        await session.commit()
+
+        # здесь создаёшь JWT/сессию для мастера
+        token = make_jwt_for_master(master)  # твоя функция
+
+    return {"ok": True, "access_token": token, "token_type": "bearer"}   
+
 
 @router.get("/max_deeplink", response_model=TokenOut)
 async def login_via_max_deeplink(
