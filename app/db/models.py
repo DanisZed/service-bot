@@ -274,28 +274,6 @@ class AdBudget(Base):
         UniqueConstraint('source_id', 'budget_date'),
     )
 
-from datetime import datetime
-from typing import Optional
-
-from sqlalchemy import (
-    Column,
-    BigInteger,
-    Integer,
-    String,
-    Text,
-    Date,
-    DateTime,
-    Numeric,
-    ForeignKey,
-    JSON,
-    Boolean,
-    UniqueConstraint,
-)
-from sqlalchemy.orm import declarative_base, relationship
-
-Base = declarative_base()
-
-# ... все твои текущие модели: ServiceCenter, Client, ServiceRequest, Master, ...
 
 class WebPushSubscription(Base):
     __tablename__ = "webpush_subscription"
