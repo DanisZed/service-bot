@@ -162,6 +162,12 @@ class Master(Base):
         foreign_keys="LeadSource.master_id"
     )
 
+    webpush_subscriptions = relationship(
+        "WebPushSubscription",
+        back_populates="master",
+        cascade="all, delete-orphan"
+    )
+
 
 class TimeSlotBooking(Base):
     __tablename__ = "time_slot_booking"
@@ -267,3 +273,61 @@ class AdBudget(Base):
     __table_args__ = (
         UniqueConstraint('source_id', 'budget_date'),
     )
+
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import (
+    Column,
+    BigInteger,
+    Integer,
+    String,
+    Text,
+    Date,
+    DateTime,
+    Numeric,
+    ForeignKey,
+    JSON,
+    Boolean,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import declarative_base, relationship
+
+Base = declarative_base()
+
+# ... все твои текущие модели: ServiceCenter, Client, ServiceRequest, Master, ...
+
+class WebPushSubscription(Base):
+    __tablename__ = "webpush_subscription"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), index=True, nullable=False)
+
+    endpoint = Column(Text, unique=True, nullable=False)
+    p256dh = Column(Text, nullable=False)
+    auth = Column(Text, nullable=False)
+
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    last_used_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    master = relationship("Master", back_populates="webpush_subscriptions")
+
+
+class Notification(Base):
+    __tablename__ = "notification"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), index=True, nullable=False)
+    request_id = Column(BigInteger, ForeignKey("service_request.id", ondelete="CASCADE"), index=True, nullable=False)
+
+    type = Column(String(32), nullable=False, default="visit_reminder")
+    channel = Column(String(32), nullable=False, default="webpush")
+
+    remind_at = Column(DateTime(timezone=True), nullable=False)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    master = relationship("Master")
+    request = relationship("ServiceRequest")    
