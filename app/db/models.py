@@ -235,7 +235,6 @@ class LeadSource(Base):
     __tablename__ = "lead_source"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    service_id = Column(String(10), ForeignKey("master.service_id", ondelete="CASCADE"), nullable=True)
     master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), nullable=True)
     name = Column(String(100), nullable=False)
     code = Column(String(50), nullable=True)
