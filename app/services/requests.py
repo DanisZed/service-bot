@@ -4,7 +4,7 @@ from datetime import datetime, date
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ServiceRequest, Master
+from app.db.models import ServiceRequest, Master, Notification
 
 
 async def create_service_request(session: AsyncSession, data: Dict[str, Any]) -> ServiceRequest:
@@ -63,7 +63,7 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
         master_id=master_id,
         master_seq=next_seq,
 
-        assigned_master_id=data.get("assigned_master_id"),  # 👈 добавлено
+        assigned_master_id=data.get("assigned_master_id"),
 
         client_id=data.get("client_id"),
         client_name=data.get("client_name"),
@@ -99,4 +99,49 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
     session.add(obj)
     await session.commit()
     await session.refresh(obj)
+
+    # --- планирование напоминаний “за час до визита” ---
+
+    if obj.datetime_from is not None:
+        remind_at = obj.datetime_from - timedelta(hours=1)
+
+        # Сначала подчистим старые напоминания по этой заявке (и для админа, и для исполнителя)
+        await session.execute(
+            delete(Notification).where(
+                Notification.request_id == obj.id,
+                Notification.type == "visit_reminder",
+                Notification.channel == "webpush",
+            )
+        )
+
+        notifications = []
+
+        # 1) админ/владелец мастера (master_id)
+        if obj.master_id is not None:
+            notifications.append(
+                Notification(
+                    master_id=obj.master_id,
+                    request_id=obj.id,
+                    remind_at=remind_at,
+                    type="visit_reminder",
+                    channel="webpush",
+                )
+            )
+
+        # 2) исполнитель (assigned_master_id)
+        if obj.assigned_master_id is not None and obj.assigned_master_id != obj.master_id:
+            notifications.append(
+                Notification(
+                    master_id=obj.assigned_master_id,
+                    request_id=obj.id,
+                    remind_at=remind_at,
+                    type="visit_reminder",
+                    channel="webpush",
+                )
+            )
+
+        if notifications:
+            session.add_all(notifications)
+            await session.commit()
+
     return obj
