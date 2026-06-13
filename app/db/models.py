@@ -251,7 +251,7 @@ class LeadSource(Base):
     requests = relationship("ServiceRequest", back_populates="lead_source")
 
     __table_args__ = (
-        UniqueConstraint('service_id', 'master_id', 'name'),
+        UniqueConstraint('master_id', 'name'),
     )
 
 
