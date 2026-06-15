@@ -1,83 +1,110 @@
-# app/scripts/send_visit_reminders.py
-import json
+# scripts/send_visit_reminders.py
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
 
-from app.db.session import async_session_maker  # или свой фабричный метод
-from app.db.models import Notification, WebPushSubscription, ServiceRequest
+from app.db.session import AsyncSessionLocal
+from app.db.models import Notification, WebPushSubscription, ServiceRequest, Master
 from app.services.webpush_sender import send_webpush
-async def process_visit_reminders():
-    async with async_session_maker() as session:
-        now = datetime.now(timezone.utc)
 
-        # Подтягиваем связанные заявки сразу (joinedload)
-        result = await session.execute(
+
+def utcnow():
+    return datetime.now(timezone.utc)
+
+
+async def process_visit_reminders():
+    now = utcnow()
+
+    async with AsyncSessionLocal() as session:
+        # 1. Берём все уведомления, которые пора отправить
+        stmt = (
             select(Notification)
-            .options(joinedload(Notification.request))
-            .where(Notification.type == "visit_reminder")
-            .where(Notification.channel == "webpush")
-            .where(Notification.sent_at.is_(None))
-            .where(Notification.remind_at <= now)
+            .where(
+                Notification.channel == "webpush",
+                Notification.type == "visit_reminder",
+                Notification.sent_at.is_(None),
+                Notification.remind_at <= now,
+            )
         )
-        notifications: list[Notification] = list(result.scalars())
+
+        result = await session.execute(stmt)
+        notifications = result.scalars().unique().all()
+
+        print(f"[send_visit_reminders] found {len(notifications)} notifications to send")
 
         for notif in notifications:
+            master: Master = notif.master
             request: ServiceRequest = notif.request
 
-            subs_result = await session.execute(
-                select(WebPushSubscription).where(
-                    WebPushSubscription.master_id == notif.master_id
-                )
-            )
-            subs: list[WebPushSubscription] = list(subs_result.scalars())
-
-            if not subs:
-                # подписок нет — просто помечаем как отправленное, чтобы не висело
-                notif.sent_at = now
+            if not master:
+                print(f"[send_visit_reminders] notification {notif.id} has no master, skip")
                 continue
 
-            title = f"Через час заявка №{request.master_seq or request.id}"
+            # 2. Подписки мастера
+            subs_stmt = select(WebPushSubscription).where(
+                WebPushSubscription.master_id == master.id
+            )
+            subs_result = await session.execute(subs_stmt)
+            subscriptions = subs_result.scalars().all()
+
+            if not subscriptions:
+                print(
+                    f"[send_visit_reminders] master {master.id} has no webpush subscriptions"
+                )
+                continue
+
+            # 3. Формируем payload
+            title = "Напоминание о выезде"
             parts = []
-            if request.address:
-                parts.append(request.address)
-            if request.subtype:
-                parts.append(request.subtype)
-            if request.client_name:
-                parts.append(request.client_name)
-            body = " — ".join(parts) or "Напоминание о визите"
+
+            if request:
+                parts.append(f"Заявка №{request.id}")
+                if request.address:
+                    parts.append(f"Адрес: {request.address}")
+                if request.datetime_from and request.datetime_to:
+                    parts.append(
+                        f"Окно: {request.datetime_from} — {request.datetime_to}"
+                    )
+                elif request.date_iso and request.time_slot:
+                    parts.append(
+                        f"Дата: {request.date_iso}, слот: {request.time_slot}"
+                    )
+            else:
+                parts.append("Напоминание о визите")
+
+            body = " | ".join(parts)
 
             payload = {
                 "title": title,
                 "body": body,
-                "request_id": int(request.id),
-                "master_seq": request.master_seq,
-                "url": f"/app/mobile-requests?request_id={int(request.id)}",
+                "url": "/app/mobile-requests",
             }
 
-            dead_sub_ids: list[int] = []
+            any_ok = False
 
-            for sub in subs:
+            for sub in subscriptions:
                 ok = send_webpush(sub, payload)
-                if not ok:
-                    dead_sub_ids.append(sub.id)
-
-            # помечаем уведомление как отправленное
-            notif.sent_at = now
-
-            # можно сразу удалить протухшие подписки
-            if dead_sub_ids:
-                await session.execute(
-                    WebPushSubscription.__table__.delete().where(
-                        WebPushSubscription.id.in_(dead_sub_ids)
+                if ok:
+                    any_ok = True
+                else:
+                    # Здесь при желании можно удалять мёртвые подписки (410)
+                    print(
+                        f"[send_visit_reminders] failed to send to sub {sub.id}, master {master.id}"
                     )
-                )
+
+            if any_ok:
+                notif.sent_at = now
+                print(f"[send_visit_reminders] notification {notif.id} marked as sent")
 
         await session.commit()
 
-        # app/scripts/send_visit_reminders.py (продолжение)
-import asyncio
+    print("[send_visit_reminders] done")
+
+
+def main():
+    asyncio.run(process_visit_reminders())
+
 
 if __name__ == "__main__":
-    asyncio.run(process_visit_reminders())
+    main()
