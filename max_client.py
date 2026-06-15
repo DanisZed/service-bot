@@ -5,19 +5,16 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 import httpx
-from dotenv import load_dotenv  # ← добавили
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-# ==== ДОБАВЛЯЕМ ЗАГРУЗКУ .env ПРЯМО ЗДЕСЬ ====
-BASE_DIR = Path(__file__).resolve().parent  # это /home/servicebot/projects/service-bot
+BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / ".env"
 if env_path.exists():
     load_dotenv(env_path)
-# ============================================
 
 MAX_API_BASE_URL = "https://platform-api.max.ru"
-
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN")
 MAX_APPLICATIONS_CHAT_ID = int(os.getenv("MAX_APPLICATIONS_CHAT_ID", "-74638917986500"))
 
@@ -27,7 +24,6 @@ class MaxClient:
         self,
         token: Optional[str] = None,
         *,
-        self.base_url = MAX_API_BASE_URL
         connect_timeout: float = 3.0,
         read_timeout: float = 15.0,
         write_timeout: float = 10.0,
@@ -38,11 +34,9 @@ class MaxClient:
         if not self.token:
             raise ValueError("MAX bot token is not set (env MAX_BOT_TOKEN)")
 
-        # Если MAX требует Bearer — включи следующую строку,
-        # и убедись, что MAX_BOT_TOKEN хранится без 'Bearer '.
-        auth_header = self.token
-        # auth_header = f"Bearer {self.token}"
+        self.base_url = MAX_API_BASE_URL   # <--- добавлено
 
+        auth_header = self.token
         timeout = httpx.Timeout(
             connect=connect_timeout,
             read=read_timeout,
@@ -51,7 +45,7 @@ class MaxClient:
         )
 
         self.client = httpx.AsyncClient(
-            base_url=MAX_API_BASE_URL,
+            base_url=self.base_url,
             headers={
                 "Authorization": auth_header,
                 "Content-Type": "application/json",
@@ -70,12 +64,7 @@ class MaxClient:
         json: Optional[Dict[str, Any]] = None,
         context: str = "",
     ) -> Dict[str, Any]:
-        """
-        Общий helper для запросов к MAX API с retry и логированием.
-        Возвращает {} при сетевых ошибках/таймаутах или при ошибках статуса.
-        """
         last_exc: Optional[BaseException] = None
-
         for attempt in range(self.retries + 1):
             try:
                 resp = await self.client.request(
@@ -84,25 +73,19 @@ class MaxClient:
                     params=params,
                     json=json,
                 )
-
                 if resp.status_code >= 400:
                     try:
                         body = resp.json()
                     except Exception:
                         body = resp.text
-
                     logger.error(
                         "MAX API error (%s): status=%s body=%s",
                         context or url,
                         resp.status_code,
                         body,
                     )
-                    # Если нужно, можно не падать, а просто вернуть тело:
-                    # return {"status_code": resp.status_code, "body": body}
                     return {}
-
                 return resp.json()
-
             except httpx.ReadTimeout as e:
                 last_exc = e
                 logger.error(
@@ -119,7 +102,6 @@ class MaxClient:
                     context or url,
                     attempt + 1,
                 )
-                # Обычно при ConnectTimeout ретраи мало помогают, выходим сразу
                 break
             except httpx.NetworkError as e:
                 last_exc = e
@@ -137,7 +119,6 @@ class MaxClient:
                     attempt + 1,
                 )
                 break
-
         if last_exc:
             logger.debug("MAX API last exception (%s): %r", context or url, last_exc)
         return {}
@@ -152,7 +133,6 @@ class MaxClient:
         payload: Dict[str, Any] = {"text": text}
         if attachments:
             payload["attachments"] = attachments
-
         resp = await self._request(
             "POST",
             "/messages",
@@ -173,7 +153,6 @@ class MaxClient:
         payload: Dict[str, Any] = {"text": text}
         if attachments:
             payload["attachments"] = attachments
-
         return await self._request(
             "POST",
             "/messages",
@@ -194,7 +173,6 @@ class MaxClient:
             payload["message"] = message
         if notification is not None:
             payload["notification"] = notification
-
         return await self._request(
             "POST",
             "/answers",
@@ -211,7 +189,6 @@ class MaxClient:
         caption: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Отправляет файл (изображение/документ) пользователю MAX."""
-        # Используем self.base_url, который мы добавили
         url = f"{self.base_url}/v1/users/{user_id}/files"
         headers = {"Authorization": f"Bearer {self.token}"}
         files = {"file": (filename, file_bytes, "image/png")}
@@ -223,15 +200,14 @@ class MaxClient:
             resp.raise_for_status()
             return resp.json()
 
-
     async def close(self) -> None:
         await self.client.aclose()
+
+
 class MaxOrderBotClient(MaxClient):
     """Клиент для order_bot (бот для активации и получения заявок)"""
-    
     def __init__(self, token: Optional[str] = None, **kwargs):
         order_token = token or os.getenv("MAX_ORDER_BOT_TOKEN")
         if not order_token:
             raise ValueError("MAX_ORDER_BOT_TOKEN is not set")
-        super().__init__(token=order_token, **kwargs)        
-        self.base_url = MAX_API_BASE_URL   # <-- добавить
+        super().__init__(token=order_token, **kwargs)
