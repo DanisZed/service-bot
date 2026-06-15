@@ -54,14 +54,10 @@
             margin-bottom: 1mm;
         }
 
-        .number {
-            font-size: 16pt;
+        /* номер + дата в одну строку, шрифт меньше */
+        .number-date {
+            font-size: 10pt;
             font-weight: bold;
-            margin-bottom: 0.5mm;
-        }
-
-        .date-line {
-            font-size: 8pt;
             margin-bottom: 1.5mm;
         }
 
@@ -115,9 +111,10 @@
     <div class="content">
         <div class="title">ГАРАНТИЙНЫЙ ТАЛОН</div>
 
-        <div class="number">№{{ request_id }}</div>
-
-        <div class="date-line">от {{ created_at }}</div>
+        <!-- номер и дата в одной строке, меньший шрифт -->
+        <div class="number-date">
+            №{{ request_id }} от {{ created_at }}
+        </div>
 
         <div class="master-line">Мастер: {{ master_full_name }}</div>
 
