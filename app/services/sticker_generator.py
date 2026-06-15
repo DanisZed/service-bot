@@ -35,9 +35,17 @@ async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> BytesIO:
         if not owner:
             raise ValueError("Мастер-владелец не найден")
 
-        service_name = owner.service_center.service_name if owner.service_center else None
+        # --- Получаем данные сервис-центра ---
+        sc = owner.service_center
+        has_service = sc is not None
+        service_name = sc.service_name if has_service else None
+        service_address = sc.address if has_service else None
+        service_phone = sc.phone if has_service else None
+        service_website = sc.website if has_service else None
+
         master_full_name = f"{owner.lastname or ''} {owner.name or ''}".strip()
         created_at_str = req.created_at.strftime("%d.%m.%Y %H:%M")
+
         # Генерируем QR-код в виде base64
         qr_data_url = generate_qr_data_url(f"{base_qr_url}/requests/{request_id}?master_id={owner.id}")
 
@@ -46,16 +54,23 @@ async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> BytesIO:
         with open(template_path, "r", encoding="utf-8") as f:
             template_str = f.read()
         template = Template(template_str)
+
+        # Передаём в шаблон все переменные, которые он ожидает
         html_content = template.render(
-            service_name=service_name,
-            master_name=master_full_name,
             request_id=request_id,
             created_at=created_at_str,
+            master_full_name=master_full_name,
+            master_phone=owner.phone,
             client_name=req.client_name or "",
             client_phone=req.client_phone or "",
             address=req.address or "",
             qr_url=qr_data_url,
-            master_full_name=master_full_name,
+            # --- Данные сервис-центра ---
+            has_service=has_service,
+            service_name=service_name,
+            service_address=service_address,
+            service_phone=service_phone,
+            service_website=service_website,
         )
 
         # Генерируем PDF
