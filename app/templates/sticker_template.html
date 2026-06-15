@@ -5,30 +5,186 @@
     <title>Наклейка</title>
     <style>
         @page { size: 50mm 80mm; margin: 2mm; }
-        body { font-family: 'DejaVu Sans', Arial, sans-serif; margin: 0; padding: 0; }
-        .header { font-size: 11pt; font-weight: bold; margin-bottom: 2mm; }
-        .request-id { font-size: 14pt; font-weight: bold; margin-bottom: 2mm; }
-        .info { font-size: 9pt; margin-bottom: 1mm; }
-        .qr-container { text-align: right; margin-top: 4mm; }
-        .qr-container img { width: 25mm; height: auto; }
-        .footer { font-size: 7pt; text-align: center; margin-top: 4mm; color: gray; }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'DejaVu Sans', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            font-size: 8pt;
+        }
+
+        .label {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ШАПКА СЕРВИСА / МАСТЕРА */
+        .header {
+            border-bottom: 0.2mm solid #000;
+            padding-bottom: 1mm;
+            margin-bottom: 1mm;
+        }
+        .service-name {
+            font-size: 11pt;
+            font-weight: bold;
+            line-height: 1.1;
+        }
+        .service-extra {
+            font-size: 7pt;
+            margin-top: 0.5mm;
+        }
+
+        /* ОСНОВНОЙ БЛОК: ЗАЯВКА + QR */
+        .main-row {
+            display: flex;
+            flex: 1 1 auto;
+            margin-top: 0.5mm;
+        }
+
+        .left-block {
+            flex: 1 1 60%;
+            padding-right: 1mm;
+        }
+
+        .right-block {
+            flex: 0 0 25mm;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .request-id {
+            font-size: 13pt;
+            font-weight: bold;
+            margin-bottom: 1mm;
+        }
+        .request-id small {
+            font-size: 7pt;
+            font-weight: normal;
+        }
+
+        .info-line {
+            margin-bottom: 0.7mm;
+        }
+        .info-label {
+            font-weight: bold;
+        }
+        .info-value {
+            font-weight: normal;
+        }
+
+        .client-block {
+            margin-top: 1mm;
+            padding-top: 0.5mm;
+            border-top: 0.15mm dotted #000;
+        }
+
+        /* QR */
+        .qr-label {
+            font-size: 7pt;
+            margin-bottom: 0.5mm;
+        }
+        .qr-container img {
+            width: 23mm; /* чуть меньше 25мм, чтобы оставить «тихую зону» вокруг кода [web:33][web:36] */
+            height: auto;
+        }
+
+        /* ФУТЕР */
+        .footer {
+            font-size: 6pt;
+            text-align: center;
+            margin-top: 1mm;
+            padding-top: 0.5mm;
+            border-top: 0.2mm solid #000;
+        }
     </style>
 </head>
 <body>
-    {% if service_name %}
-        <div class="header">{{ service_name }}</div>
-        {% if service_address %}<div class="info">{{ service_address }}</div>{% endif %}
-        {% if service_phone %}<div class="info">{{ service_phone }}</div>{% endif %}
+<div class="label">
+    {% if service_name or service_address or service_phone %}
+        <div class="header">
+            {% if service_name %}
+                <div class="service-name">{{ service_name }}</div>
+            {% endif %}
+            {% if service_address %}
+                <div class="service-extra">{{ service_address }}</div>
+            {% endif %}
+            {% if service_phone %}
+                <div class="service-extra">☎ {{ service_phone }}</div>
+            {% endif %}
+        </div>
+    {% else %}
+        <!-- Режим частного мастера без сервиса -->
+        <div class="header">
+            <div class="service-name">{{ master_full_name }}</div>
+            {% if master_phone %}
+                <div class="service-extra">☎ {{ master_phone }}</div>
+            {% endif %}
+        </div>
     {% endif %}
-    <div class="request-id">Заявка №{{ request_id }}</div>
-    <div class="info">Дата: {{ created_at }}</div>
-    <div class="info">Мастер: {{ master_full_name }}</div>
-    {% if master_phone and not service_name %}
-        <div class="info">Тел.: {{ master_phone }}</div>
-    {% endif %}
-    {% if client_name %}<div class="info">Клиент: {{ client_name }}</div>{% endif %}
-    {% if address and address != "Мастерская" %}<div class="info">Адрес: {{ address[:50] }}</div>{% endif %}
-    <div class="qr-container"><img src="{{ qr_url }}" alt="QR-код"></div>
-    <div class="footer">{% if service_website %}{{ service_website }}{% else %}www.master-rbt-crm.ru{% endif %}</div>
+
+    <div class="main-row">
+        <!-- ЛЕВАЯ КОЛОНКА: ЗАЯВКА + КЛИЕНТ -->
+        <div class="left-block">
+            <div class="request-id">
+                №{{ request_id }}
+                <small>заявка</small>
+            </div>
+
+            <div class="info-line">
+                <span class="info-label">Дата:</span>
+                <span class="info-value"> {{ created_at }}</span>
+            </div>
+
+            <div class="info-line">
+                <span class="info-label">Мастер:</span>
+                <span class="info-value"> {{ master_full_name }}</span>
+            </div>
+
+            {% if client_name %}
+                <div class="client-block">
+                    <div class="info-line">
+                        <span class="info-label">Клиент:</span>
+                        <span class="info-value"> {{ client_name }}</span>
+                    </div>
+                    {% if client_phone %}
+                        <div class="info-line">
+                            <span class="info-label">Тел. клиента:</span>
+                            <span class="info-value"> {{ client_phone }}</span>
+                        </div>
+                    {% endif %}
+                    {% if address %}
+                        <div class="info-line">
+                            <span class="info-label">Адрес:</span>
+                            <span class="info-value"> {{ address }}</span>
+                        </div>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- ПРАВАЯ КОЛОНКА: QR -->
+        <div class="right-block">
+            <div class="qr-label">Скан для заявки</div>
+            <div class="qr-container">
+                <img src="{{ qr_url }}" alt="QR-код">
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        {% if service_website %}
+            {{ service_website }}
+        {% else %}
+            www.master-rbt-crm.ru
+        {% endif %}
+    </div>
+</div>
 </body>
 </html>
