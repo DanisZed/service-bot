@@ -44,7 +44,7 @@ async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> BytesIO:
         service_website = sc.website if has_service else None
 
         master_full_name = f"{owner.lastname or ''} {owner.name or ''}".strip()
-        created_at_str = req.created_at.strftime("%d.%m.%Y %H:%M")
+        created_at_str = req.created_at.strftime("%d.%m.%y")
 
         # Генерируем QR-код в виде base64
         qr_data_url = generate_qr_data_url(f"{base_qr_url}/requests/{request_id}?master_id={owner.id}")
