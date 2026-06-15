@@ -125,32 +125,56 @@ class MaxClient:
         file_bytes: bytes,
         filename: str,
         caption: Optional[str] = None,
+        max_retries: int = 3,      # Количество попыток
+        base_delay: float = 1.0,   # Начальная задержка в секундах
     ) -> Dict[str, Any]:
-        # Шаг 1: получить URL для загрузки
+        """
+        Отправляет файл пользователю с повторными попытками.
+        """
+        # Шаг 1: Получаем URL для загрузки
         upload_resp = await self._request(
             "POST", "/uploads", params={"type": "file"}, context="get_upload_url"
         )
         if not upload_resp or "url" not in upload_resp:
             raise Exception("Не удалось получить URL для загрузки")
         upload_url = upload_resp["url"]
-        token = upload_resp.get("token")
 
-        # Шаг 2: загрузить файл
+        # Шаг 2: Загружаем файл
         async with httpx.AsyncClient() as client:
-            files = {"file": (filename, file_bytes, "application/pdf")}
+            # ВАЖНО: Имя поля должно быть "data", как указано в документации MAX! [reference:1]
+            files = {"data": (filename, file_bytes, "application/pdf")}
             resp = await client.post(upload_url, files=files)
             resp.raise_for_status()
             upload_data = resp.json()
-        attachment_token = token or upload_data.get("token")
-        if not attachment_token:
-            raise Exception("Не удалось получить токен вложения")
 
-        # Шаг 3: отправить сообщение с вложением
+        # Получаем токен из ответа на загрузку
+        # Для type=file токен приходит именно здесь. [reference:2]
+        attachment_token = upload_data.get("token")
+        if not attachment_token:
+            raise Exception("Не удалось получить токен вложения после загрузки")
+
+        # Шаг 3: Отправляем сообщение с вложением с повторными попытками
         attachments = [{"type": "file", "payload": {"token": attachment_token}}]
-        if caption:
-            return await self.send_text_to_user(user_id, caption, attachments)
-        else:
-            return await self.send_text_to_user(user_id, "", attachments)
+
+        for attempt in range(max_retries):
+            try:
+                if caption:
+                    resp = await self.send_text_to_user(user_id, caption, attachments)
+                else:
+                    resp = await self.send_text_to_user(user_id, "", attachments)
+                
+                # Если отправка прошла без ошибок, возвращаем ответ
+                # Проверяем, что в ответе нет признаков ошибки (опционально)
+                if resp and "code" in resp and resp["code"] == "attachment.not.ready":
+                    raise Exception("attachment.not.ready")
+                return resp
+            except Exception as e:
+                logger.warning(f"Попытка {attempt+1} отправки файла не удалась: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                # Ждём с увеличивающейся задержкой перед следующей попыткой
+                delay = base_delay * (2 ** attempt)  # Экспоненциальная задержка: 1, 2, 4 сек.
+                await asyncio.sleep(delay)
 
     async def close(self) -> None:
         await self.client.aclose()
