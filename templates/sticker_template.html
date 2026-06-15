@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Наклейка</title>
+    <style>
+        @page {
+            size: 50mm 80mm;
+            margin: 2mm;
+        }
+        body {
+            font-family: 'DejaVu Sans', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .header {
+            font-size: 11pt;
+            font-weight: bold;
+            margin-bottom: 2mm;
+        }
+        .request-id {
+            font-size: 14pt;
+            font-weight: bold;
+            margin-bottom: 2mm;
+        }
+        .info {
+            font-size: 9pt;
+            margin-bottom: 1mm;
+        }
+        .qr-container {
+            text-align: right;
+            margin-top: 4mm;
+        }
+        .qr-container img {
+            width: 25mm;
+            height: auto;
+        }
+        .footer {
+            font-size: 7pt;
+            text-align: center;
+            margin-top: 4mm;
+            color: gray;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">{{ service_name or master_name }}</div>
+    <div class="request-id">Заявка №{{ request_id }}</div>
+    <div class="info">Дата: {{ created_at }}</div>
+    <div class="info">Мастер: {{ master_full_name }}</div>
+    {% if client_name %}
+    <div class="info">Клиент: {{ client_name }}</div>
+    {% endif %}
+    {% if client_phone %}
+    <div class="info">Тел.: {{ client_phone }}</div>
+    {% endif %}
+    {% if address and address != "Мастерская" %}
+    <div class="info">Адрес: {{ address[:50] }}</div>
+    {% endif %}
+    <div class="qr-container">
+        <img src="{{ qr_url }}" alt="QR-код">
+    </div>
+    <div class="footer">www.master-rbt-crm.ru</div>
+</body>
+</html>

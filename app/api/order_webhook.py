@@ -60,22 +60,21 @@ async def handle_callback(
         try:
             request_id = int(payload.split(":", 1)[1])
             frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
-            img_bytes = await generate_sticker_for_request(request_id, frontend_base)
+            pdf_buffer = await generate_sticker_pdf(request_id, frontend_base)
             client = MaxOrderBotClient()
             try:
-                # Отправляем файл
                 await client.send_file(
                     user_id=user_id,
-                    file_bytes=img_bytes,
-                    filename=f"sticker_{request_id}.png",
+                    file_bytes=pdf_buffer.getvalue(),
+                    filename=f"sticker_{request_id}.pdf",
                     caption=f"🖨️ Наклейка для заявки №{request_id}",
                 )
-                # Убираем индикатор загрузки у кнопки
-                await client.answer_callback(callback_id=callback_id, notification="✅ Готово")
+                await client.answer_callback(callback_id=callback_id, notification="✅ Наклейка готова")
             finally:
                 await client.close()
         except Exception as e:
-            logger.error(f"Ошибка генерации наклейки: {e}")
+            logger.error(f"Ошибка генерации PDF: {e}")
+            # ... обработка ошибок
             client = MaxOrderBotClient()
             try:
                 await client.answer_callback(callback_id=callback_id, notification="❌ Ошибка")
