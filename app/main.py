@@ -20,6 +20,7 @@ from app.api import lead_sources as lead_sources_router
 from app.api import ad_budgets as ad_budgets_router
 from app.api.health import router as health_router
 from app.api.webpush import router as webpush_router
+from app.api import service_center as service_center_router
 
 PANEL_BASE_URL = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
 
@@ -63,3 +64,4 @@ app.include_router(lead_sources_router.router)
 app.include_router(ad_budgets_router.router)
 app.include_router(health_router)
 app.include_router(webpush_router)
+app.include_router(service_center_router.router)
