@@ -78,3 +78,12 @@ def generate_qr_data_url(url: str) -> str:
     img.save(buffered, format="PNG")
     img_base64 = base64.b64encode(buffered.getvalue()).decode()
     return f"data:image/png;base64,{img_base64}"
+
+# Сохраняем совместимость со старыми вызовами (эндпоинт /api/requests/{id}/sticker)
+async def generate_sticker_for_request(request_id: int, base_qr_url: str) -> bytes:
+    """
+    Обёртка для генерации PDF (совместимость со старым именем функции).
+    Возвращает байты PDF-файла.
+    """
+    pdf_buffer = await generate_sticker_pdf(request_id, base_qr_url)
+    return pdf_buffer.getvalue()
