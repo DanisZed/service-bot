@@ -61,7 +61,6 @@ async def handle_callback(
             request_id = int(payload.split(":", 1)[1])
             frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
             img_bytes = await generate_sticker_for_request(request_id, frontend_base)
-
             client = MaxOrderBotClient()
             try:
                 # Отправляем файл
@@ -71,8 +70,8 @@ async def handle_callback(
                     filename=f"sticker_{request_id}.png",
                     caption=f"🖨️ Наклейка для заявки №{request_id}",
                 )
-                # Закрываем «часики» у кнопки
-                await client.answer_callback(callback_id=callback_id, notification="✅ Наклейка готова")
+                # Убираем индикатор загрузки у кнопки
+                await client.answer_callback(callback_id=callback_id, notification="✅ Готово")
             finally:
                 await client.close()
         except Exception as e:
@@ -82,8 +81,7 @@ async def handle_callback(
                 await client.answer_callback(callback_id=callback_id, notification="❌ Ошибка")
             finally:
                 await client.close()
-    else:
-        logger.warning(f"Неизвестный callback payload: {payload}")
+        return
 
 
 @router.post("/order/webhook")
