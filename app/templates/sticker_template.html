@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Наклейка</title>
+    <title>Гарантийный талон</title>
     <style>
         @page { size: 50mm 80mm; margin: 2mm; }
         * {
@@ -20,15 +20,14 @@
             height: 100%;
             display: flex;
             flex-direction: column;
-            align-items: stretch;
-            text-align: left;
+            align-items: center;
+            text-align: center;
         }
 
-        /* ШАПКА */
+        /* Шапка сервиса / мастера */
         .header {
-            padding-bottom: 1mm;
-            margin-bottom: 1mm;
-            border-bottom: 0.2mm solid #000;
+            margin-top: 1mm;
+            margin-bottom: 2mm;
         }
         .service-name {
             font-size: 11pt;
@@ -40,40 +39,37 @@
             margin-top: 0.5mm;
         }
 
-        /* ОСНОВНОЙ СТОЛБИК */
+        /* Основной блок */
         .content {
             flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
-        .request-id {
-            font-size: 16pt;
+        .title {
+            font-size: 9pt;
             font-weight: bold;
-            margin-top: 1mm;
+            letter-spacing: 0.5pt;
             margin-bottom: 1mm;
         }
-        .request-id small {
-            font-size: 7pt;
-            font-weight: normal;
-        }
 
-        .info-line {
-            margin-bottom: 0.9mm;
-        }
-        .info-label {
+        .number {
+            font-size: 16pt;
             font-weight: bold;
-        }
-        .info-value {
-            font-weight: normal;
+            margin-bottom: 0.5mm;
         }
 
-        .qr-block {
-            margin-top: 2mm;
-            text-align: center;
+        .date-line {
+            font-size: 8pt;
+            margin-bottom: 1.5mm;
         }
-        .qr-label {
-            font-size: 7pt;
-            margin-bottom: 0.8mm;
+
+        .master-line {
+            font-size: 8pt;
+            margin-bottom: 2mm;
         }
+
         .qr-container img {
             width: 25mm;
             height: auto;
@@ -81,27 +77,25 @@
 
         .qr-hint {
             font-size: 7pt;
-            margin-top: 0.8mm;
-            text-align: center;
+            margin-top: 1mm;
+            max-width: 40mm;
         }
 
-        /* ФУТЕР */
+        /* Футер с сайтом (покрупнее) */
         .footer {
-            font-size: 6pt;
+            font-size: 9pt;
+            font-weight: bold;
             text-align: center;
-            margin-top: 1mm;
-            padding-top: 0.5mm;
-            border-top: 0.2mm solid #000;
+            margin-top: 2mm;
+            margin-bottom: 1mm;
         }
     </style>
 </head>
 <body>
 <div class="label">
-    {% if service_name or service_address or service_phone %}
+    {% if service_name %}
         <div class="header">
-            {% if service_name %}
-                <div class="service-name">{{ service_name }}</div>
-            {% endif %}
+            <div class="service-name">{{ service_name }}</div>
             {% if service_address %}
                 <div class="service-extra">{{ service_address }}</div>
             {% endif %}
@@ -110,7 +104,6 @@
             {% endif %}
         </div>
     {% else %}
-        <!-- Режим частного мастера без сервиса -->
         <div class="header">
             <div class="service-name">{{ master_full_name }}</div>
             {% if master_phone %}
@@ -120,29 +113,20 @@
     {% endif %}
 
     <div class="content">
-        <div class="request-id">
-            №{{ request_id }}
-            <small>заявка</small>
+        <div class="title">ГАРАНТИЙНЫЙ ТАЛОН</div>
+
+        <div class="number">№{{ request_id }}</div>
+
+        <div class="date-line">от {{ created_at }}</div>
+
+        <div class="master-line">Мастер: {{ master_full_name }}</div>
+
+        <div class="qr-container">
+            <img src="{{ qr_url }}" alt="QR-код">
         </div>
 
-        <div class="info-line">
-            <span class="info-label">Дата:</span>
-            <span class="info-value"> {{ created_at }}</span>
-        </div>
-
-        <div class="info-line">
-            <span class="info-label">Мастер:</span>
-            <span class="info-value"> {{ master_full_name }}</span>
-        </div>
-
-        <div class="qr-block">
-            <div class="qr-label">Статус и детали заявки</div>
-            <div class="qr-container">
-                <img src="{{ qr_url }}" alt="QR-код">
-            </div>
-            <div class="qr-hint">
-                Наведите камеру телефона, чтобы открыть карточку заявки
-            </div>
+        <div class="qr-hint">
+            Наведите камеру телефона, чтобы узнать подробности по вашему ремонту
         </div>
     </div>
 
