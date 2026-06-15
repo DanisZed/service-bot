@@ -89,24 +89,7 @@
 </head>
 <body>
 <div class="label">
-    {% if service_name %}
-        <div class="header">
-            <div class="service-name">{{ service_name }}</div>
-            {% if service_address %}
-                <div class="service-extra">{{ service_address }}</div>
-            {% endif %}
-            {% if service_phone %}
-                <div class="service-extra">☎ {{ service_phone }}</div>
-            {% endif %}
-        </div>
-    {% else %}
-        <div class="header">
-            <div class="service-name">{{ master_full_name }}</div>
-            {% if master_phone %}
-                <div class="service-extra">☎ {{ master_phone }}</div>
-            {% endif %}
-        </div>
-    {% endif %}
+    
 
     <div class="content">
         <div class="title">ГАРАНТИЙНЫЙ ТАЛОН</div>
@@ -126,6 +109,25 @@
             Наведите камеру телефона, чтобы узнать подробности по вашему ремонту
         </div>
     </div>
+
+    {% if service_name %}
+        <div class="header">
+            <div class="service-name">{{ service_name }}</div>
+            {% if service_address %}
+                <div class="service-extra">{{ service_address }}</div>
+            {% endif %}
+            {% if service_phone %}
+                <div class="service-extra">☎ {{ service_phone }}</div>
+            {% endif %}
+        </div>
+    {% else %}
+        <div class="header">
+            <div class="service-name">{{ master_full_name }}</div>
+            {% if master_phone %}
+                <div class="service-extra">☎ {{ master_phone }}</div>
+            {% endif %}
+        </div>
+    {% endif %}
 
     <div class="footer">
         {% if service_website %}
