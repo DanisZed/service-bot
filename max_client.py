@@ -188,17 +188,44 @@ class MaxClient:
         filename: str,
         caption: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Отправляет файл (изображение/документ) пользователю MAX."""
-        url = f"{self.base_url}/v1/users/{user_id}/files"
-        headers = {"Authorization": f"Bearer {self.token}"}
-        files = {"file": (filename, file_bytes, "image/png")}
-        data = {}
-        if caption:
-            data["caption"] = caption
+        """Отправляет файл пользователю через двухэтапный процесс MAX API."""
+        # Шаг 1: Получаем URL для загрузки
+        upload_response = await self._request(
+            "POST",
+            "/uploads",
+            params={"type": "file"},
+            context="get_upload_url",
+        )
+        
+        if not upload_response or "url" not in upload_response:
+            raise Exception("Не удалось получить URL для загрузки файла")
+        
+        upload_url = upload_response["url"]
+        token = upload_response.get("token")
+        
+        # Шаг 2: Загружаем файл по полученному URL
         async with httpx.AsyncClient() as client:
-            resp = await client.post(url, headers=headers, files=files, data=data)
-            resp.raise_for_status()
-            return resp.json()
+            files = {"data": (filename, file_bytes, "application/octet-stream")}
+            upload_result = await client.post(upload_url, files=files)
+            upload_result.raise_for_status()
+            upload_data = upload_result.json()
+        
+        # Токен может прийти на втором шаге
+        attachment_token = token or upload_data.get("token")
+        
+        if not attachment_token:
+            raise Exception("Не удалось получить токен для вложения")
+        
+        # Шаг 3: Отправляем сообщение с вложением
+        attachments = [{
+            "type": "file",
+            "payload": {"token": attachment_token}
+        }]
+        
+        if caption:
+            return await self.send_text_to_user(user_id, caption, attachments)
+        else:
+            return await self.send_text_to_user(user_id, "", attachments)
 
     async def close(self) -> None:
         await self.client.aclose()
