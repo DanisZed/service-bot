@@ -66,14 +66,13 @@ async def handle_callback(
             img_bytes = await generate_sticker_for_request(request_id, frontend_base)
             client = MaxOrderBotClient()
             try:
-                # Отправляем файл (реализуйте send_file в MaxOrderBotClient, если нет)
-                # Если метод send_file отсутствует, можно отправить ссылку на эндпоинт
-                # Для простоты пока отправляем ссылку:
+                # Если есть метод send_file – используйте его, иначе отправьте ссылку
+                # Для начала отправьте ссылку на эндпоинт (как в предыдущем примере)
                 api_base = os.getenv("API_BASE_URL", "https://panel.master-rbt-crm.ru")
                 sticker_url = f"{api_base}/api/requests/{request_id}/sticker"
                 await client.answer_callback(
                     callback_id=callback_id,
-                    message={"text": f"Наклейка для заявки №{request_id}:\n{sticker_url}"},
+                    message={"text": f"🖨️ Наклейка для заявки №{request_id}:\n{sticker_url}"},
                     notification=None,
                 )
             finally:
@@ -81,17 +80,13 @@ async def handle_callback(
         except Exception as e:
             logger.error(f"Ошибка генерации наклейки: {e}")
             client = MaxOrderBotClient()
-            try:
-                await client.answer_callback(
-                    callback_id=callback_id,
-                    message={"text": "❌ Не удалось создать наклейку"},
-                    notification=None,
-                )
-            finally:
-                await client.close()
-    else:
-        # Другие callback'и (если появятся) можно добавить
-        logger.warning(f"Неизвестный callback payload: {payload}")
+            await client.answer_callback(
+                callback_id=callback_id,
+                message={"text": "❌ Не удалось создать наклейку"},
+                notification=None,
+            )
+            await client.close()
+        return
 
 
 @router.post("/order/webhook")
