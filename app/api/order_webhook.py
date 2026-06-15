@@ -13,12 +13,10 @@ from max_client import MaxOrderBotClient
 from app.services.sticker_generator import generate_sticker_for_request
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 
 async def activate_master(master_id: str, user_id: int) -> Tuple[str, Optional[List[dict]]]:
-    """Активирует мастера по master_id"""
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Master).where(Master.master_id == master_id)
@@ -58,40 +56,38 @@ async def handle_callback(
     callback_id: str,
     payload: str
 ) -> None:
-    """Обрабатывает callback-запросы от кнопок"""
     if payload.startswith("sticker:"):
         try:
             request_id = int(payload.split(":", 1)[1])
             frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
             img_bytes = await generate_sticker_for_request(request_id, frontend_base)
+
             client = MaxOrderBotClient()
             try:
-                # Если есть метод send_file – используйте его, иначе отправьте ссылку
-                # Для начала отправьте ссылку на эндпоинт (как в предыдущем примере)
-                api_base = os.getenv("API_BASE_URL", "https://panel.master-rbt-crm.ru")
-                sticker_url = f"{api_base}/api/requests/{request_id}/sticker"
-                await client.answer_callback(
-                    callback_id=callback_id,
-                    message={"text": f"🖨️ Наклейка для заявки №{request_id}:\n{sticker_url}"},
-                    notification=None,
+                # Отправляем файл
+                await client.send_file(
+                    user_id=user_id,
+                    file_bytes=img_bytes,
+                    filename=f"sticker_{request_id}.png",
+                    caption=f"🖨️ Наклейка для заявки №{request_id}",
                 )
+                # Закрываем «часики» у кнопки
+                await client.answer_callback(callback_id=callback_id, notification="✅ Наклейка готова")
             finally:
                 await client.close()
         except Exception as e:
             logger.error(f"Ошибка генерации наклейки: {e}")
             client = MaxOrderBotClient()
-            await client.answer_callback(
-                callback_id=callback_id,
-                message={"text": "❌ Не удалось создать наклейку"},
-                notification=None,
-            )
-            await client.close()
-        return
+            try:
+                await client.answer_callback(callback_id=callback_id, notification="❌ Ошибка")
+            finally:
+                await client.close()
+    else:
+        logger.warning(f"Неизвестный callback payload: {payload}")
 
 
 @router.post("/order/webhook")
 async def order_webhook(request: Request, background_tasks: BackgroundTasks) -> Dict[str, Any]:
-    """Webhook для order_bot"""
     body = await request.json()
     print("\n" + "="*60)
     print("🔔 ORDER BOT WEBHOOK")
