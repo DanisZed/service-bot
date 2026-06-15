@@ -60,7 +60,7 @@
         }
 
         .request-id {
-            font-size: 13pt;
+            font-size: 16pt;
             font-weight: bold;
             margin-bottom: 1mm;
         }
@@ -70,7 +70,7 @@
         }
 
         .info-line {
-            margin-bottom: 0.7mm;
+            margin-bottom: 0.9mm;
         }
         .info-label {
             font-weight: bold;
@@ -79,19 +79,13 @@
             font-weight: normal;
         }
 
-        .client-block {
-            margin-top: 1mm;
-            padding-top: 0.5mm;
-            border-top: 0.15mm dotted #000;
-        }
-
         /* QR */
         .qr-label {
             font-size: 7pt;
             margin-bottom: 0.5mm;
         }
         .qr-container img {
-            width: 23mm; /* чуть меньше 25мм, чтобы оставить «тихую зону» вокруг кода [web:33][web:36] */
+            width: 23mm; /* чуть меньше полной ширины, чтобы оставить «тихую зону» вокруг QR [web:33][web:36] */
             height: auto;
         }
 
@@ -130,7 +124,7 @@
     {% endif %}
 
     <div class="main-row">
-        <!-- ЛЕВАЯ КОЛОНКА: ЗАЯВКА + КЛИЕНТ -->
+        <!-- ЛЕВАЯ КОЛОНКА: ЗАЯВКА -->
         <div class="left-block">
             <div class="request-id">
                 №{{ request_id }}
@@ -146,27 +140,6 @@
                 <span class="info-label">Мастер:</span>
                 <span class="info-value"> {{ master_full_name }}</span>
             </div>
-
-            {% if client_name %}
-                <div class="client-block">
-                    <div class="info-line">
-                        <span class="info-label">Клиент:</span>
-                        <span class="info-value"> {{ client_name }}</span>
-                    </div>
-                    {% if client_phone %}
-                        <div class="info-line">
-                            <span class="info-label">Тел. клиента:</span>
-                            <span class="info-value"> {{ client_phone }}</span>
-                        </div>
-                    {% endif %}
-                    {% if address %}
-                        <div class="info-line">
-                            <span class="info-label">Адрес:</span>
-                            <span class="info-value"> {{ address }}</span>
-                        </div>
-                    {% endif %}
-                </div>
-            {% endif %}
         </div>
 
         <!-- ПРАВАЯ КОЛОНКА: QR -->
