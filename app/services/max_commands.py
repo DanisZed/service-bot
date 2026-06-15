@@ -103,3 +103,47 @@ async def handle_command(
         return reply_text, attachments
 
     return None, None
+
+async def cmd_sticker(user_id: int, args: list):
+    if len(args) < 1:
+        return "Используйте: /sticker <ID заявки>", None
+    try:
+        req_id = int(args[0])
+    except:
+        return "ID заявки должен быть числом", None
+
+    async with AsyncSessionLocal() as session:
+        req = await session.get(ServiceRequest, req_id)
+        if not req:
+            return "Заявка не найдена", None
+        master = await session.execute(select(Master).where(Master.max_user_id == user_id))
+        master = master.scalar_one_or_none()
+        if not master or (req.master_id != master.id and req.assigned_master_id != master.id):
+            return "Нет доступа к этой заявке", None
+
+        owner = await session.get(Master, req.master_id)
+        service_name = owner.service_center.service_name if owner.service_center else None
+        frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+        qr_url = f"{frontend_base}/requests/{req_id}?master_id={owner.id}&service_center_id={owner.service_center_id or ''}"
+
+        img_bytes = await generate_sticker(
+            request_id=req_id,
+            service_name=service_name,
+            master_lastname=owner.lastname or "",
+            master_name=owner.name or "",
+            created_at=req.created_at,
+            qr_url=qr_url,
+        )
+
+    # Отправляем изображение через MAX API
+    from max_client import MaxClient
+    client = MaxClient()
+    try:
+        # Метод send_image предполагает, что вы загрузите файл
+        # Реализуйте upload и отправку картинки
+        # Временно дадим ссылку на эндпоинт
+        api_base = os.getenv("API_BASE_URL", "https://panel.master-rbt-crm.ru")
+        sticker_url = f"{api_base}/api/requests/{req_id}/sticker"
+        return f"Наклейка для заявки {req_id}:\n{sticker_url}", None
+    finally:
+        await client.close()

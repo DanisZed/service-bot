@@ -12,6 +12,7 @@ from app.api.deps import get_current_master, get_db
 
 from app.services.masters_notify import notify_master_request_created
 from app.services.requests import create_service_request
+from app.services.sticker_generator import generate_sticker_for_request
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
@@ -273,3 +274,16 @@ async def update_service_request(
     await db.commit()
     await db.refresh(obj)
     return obj
+
+@router.get("/{request_id}/sticker")
+async def get_request_sticker(
+    request_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    req = await db.get(ServiceRequest, request_id)
+    if not req or (req.master_id != current_master.id and req.assigned_master_id != current_master.id):
+        raise HTTPException(404, "Заявка не найдена или нет доступа")
+    frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+    img_bytes = await generate_sticker_for_request(request_id, frontend_base)
+    return Response(content=img_bytes, media_type="image/png")

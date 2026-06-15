@@ -12,6 +12,7 @@ from app.db.session import AsyncSessionLocal
 from sqlalchemy import select
 import secrets
 from datetime import datetime, timezone, timedelta
+from app.services.sticker_generator import generate_sticker_for_request
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -143,6 +144,32 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
 
     user_id = user.get("user_id")
     callback_id = callback.get("callback_id")
+
+
+    # внутри handle_message_callback после получения user_id и callback_id
+    if payload.startswith("sticker:"):
+        try:
+            request_id = int(payload.split(":", 1)[1])
+            # Базовый URL для фронта (откуда берётся QR)
+            frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+            img_bytes = await generate_sticker_for_request(request_id, frontend_base)
+            client = MaxClient()
+            try:
+                # Отправляем файл пользователю
+                await client.send_file(
+                    user_id=user_id,
+                    file_bytes=img_bytes,
+                    filename=f"sticker_{request_id}.png",
+                    caption=f"Наклейка для заявки №{request_id}",
+                )
+                # Отвечаем на callback (убираем «часики»)
+                await client.answer_callback(callback_id=callback_id, notification="✅ Наклейка готова")
+            finally:
+                await client.close()
+        except Exception as e:
+            logger.error(f"Ошибка генерации наклейки: {e}")
+            await client.answer_callback(callback_id=callback_id, notification="❌ Ошибка")
+        return   
 
     if not user_id or not callback_id or payload is None:
         logger.warning("Invalid message_callback event: %s", event)

@@ -202,6 +202,26 @@ class MaxClient:
             context=f"answer_callback callback_id={callback_id}",
         )
 
+    async def send_file(
+        self,
+        user_id: int,
+        file_bytes: bytes,
+        filename: str,
+        caption: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Отправляет файл (изображение/документ) пользователю MAX."""
+        url = f"{self.base_url}/v1/users/{user_id}/files"
+        headers = {"Authorization": f"Bearer {self.token}"}
+        files = {"file": (filename, file_bytes, "image/png")}
+        data = {}
+        if caption:
+            data["caption"] = caption
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=headers, files=files, data=data)
+            resp.raise_for_status()
+            return resp.json()
+
+
     async def close(self) -> None:
         await self.client.aclose()
 class MaxOrderBotClient(MaxClient):
