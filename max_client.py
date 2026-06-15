@@ -1,20 +1,25 @@
 import os
 import logging
+import asyncio
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import httpx
 from dotenv import load_dotenv
 
+
 logger = logging.getLogger(__name__)
+
 
 BASE_DIR = Path(__file__).resolve().parent
 env_path = BASE_DIR / ".env"
 if env_path.exists():
     load_dotenv(env_path)
 
+
 MAX_API_BASE_URL = "https://platform-api.max.ru"
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN")
 MAX_APPLICATIONS_CHAT_ID = int(os.getenv("MAX_APPLICATIONS_CHAT_ID", "-74638917986500"))
+
 
 
 class MaxClient:
@@ -31,6 +36,7 @@ class MaxClient:
         self.token = token or MAX_BOT_TOKEN
         if not self.token:
             raise ValueError("MAX bot token is not set (env MAX_BOT_TOKEN)")
+
 
         self.base_url = MAX_API_BASE_URL
         auth_header = self.token
@@ -49,6 +55,7 @@ class MaxClient:
             timeout=timeout,
         )
         self.retries = retries
+
 
     async def _request(
         self,
@@ -88,6 +95,7 @@ class MaxClient:
             logger.debug("MAX API last exception (%s): %r", context or url, last_exc)
         return {}
 
+
     async def send_text_to_user(
         self, user_id: int, text: str, attachments: Optional[List[dict]] = None
     ) -> Dict[str, Any]:
@@ -99,6 +107,7 @@ class MaxClient:
         print("### MAX send_text_to_user resp=", resp)
         return resp
 
+
     async def send_text_to_chat(
         self, chat_id: int, text: str, attachments: Optional[List[dict]] = None
     ) -> Dict[str, Any]:
@@ -107,6 +116,7 @@ class MaxClient:
         if attachments:
             payload["attachments"] = attachments
         return await self._request("POST", "/messages", params=params, json=payload, context=f"chat chat_id={chat_id}")
+
 
     async def answer_callback(
         self, callback_id: str, message: Optional[dict] = None, notification: Optional[str] = None
@@ -119,17 +129,20 @@ class MaxClient:
             payload["notification"] = notification
         return await self._request("POST", "/answers", params=params, json=payload, context=f"answer_callback callback_id={callback_id}")
 
+
     async def send_file(
         self,
         user_id: int,
         file_bytes: bytes,
         filename: str,
         caption: Optional[str] = None,
-        max_retries: int = 3,      # Количество попыток
-        base_delay: float = 1.0,   # Начальная задержка в секундах
+        max_retries: int = 5,
+        initial_delay: float = 3.0,
+        base_delay: float = 5.0,
     ) -> Dict[str, Any]:
         """
-        Отправляет файл пользователю с повторными попытками.
+        Отправляет файл пользователю с повторными попытками и правильной паузой.
+        Согласно документации MAX: после загрузки файла сделать паузу перед отправкой [web:1].
         """
         # Шаг 1: Получаем URL для загрузки
         upload_resp = await self._request(
@@ -139,22 +152,29 @@ class MaxClient:
             raise Exception("Не удалось получить URL для загрузки")
         upload_url = upload_resp["url"]
 
+
         # Шаг 2: Загружаем файл
         async with httpx.AsyncClient() as client:
-            # ВАЖНО: Имя поля должно быть "data", как указано в документации MAX! [reference:1]
             files = {"data": (filename, file_bytes, "application/pdf")}
             resp = await client.post(upload_url, files=files)
             resp.raise_for_status()
             upload_data = resp.json()
 
-        # Получаем токен из ответа на загрузку
-        # Для type=file токен приходит именно здесь. [reference:2]
+
+        # Получаем токен вложения
         attachment_token = upload_data.get("token")
         if not attachment_token:
             raise Exception("Не удалось получить токен вложения после загрузки")
 
-        # Шаг 3: Отправляем сообщение с вложением с повторными попытками
+
+        # Шаг 3: ПАУЗА после загрузки перед отправкой (согласно документации MAX)
+        await asyncio.sleep(initial_delay)
+        logger.info(f"Пауза {initial_delay}с после загрузки файла, начинаю отправку")
+
+
+        # Шаг 4: Отправляем сообщение с вложением с повторными попытками
         attachments = [{"type": "file", "payload": {"token": attachment_token}}]
+
 
         for attempt in range(max_retries):
             try:
@@ -163,21 +183,35 @@ class MaxClient:
                 else:
                     resp = await self.send_text_to_user(user_id, "", attachments)
                 
-                # Если отправка прошла без ошибок, возвращаем ответ
-                # Проверяем, что в ответе нет признаков ошибки (опционально)
-                if resp and "code" in resp and resp["code"] == "attachment.not.ready":
-                    raise Exception("attachment.not.ready")
+                # Проверяем ошибку в ответе (если MAX вернул ошибку с кодом)
+                if resp and isinstance(resp, dict) and "code" in resp:
+                    if resp["code"] == "attachment.not.ready":
+                        logger.warning(f"Попытка {attempt+1}: attachment.not.ready, повторяю через {base_delay * (2 ** attempt)}с")
+                        if attempt == max_retries - 1:
+                            raise Exception("attachment.not.ready после всех попыток")
+                        # Экспоненциальная задержка: 5, 10, 20, 40 сек.
+                        delay = base_delay * (2 ** attempt)
+                        await asyncio.sleep(delay)
+                        continue
+                
+                # Если отправка успешна - возвращаем ответ
                 return resp
+                
             except Exception as e:
                 logger.warning(f"Попытка {attempt+1} отправки файла не удалась: {e}")
                 if attempt == max_retries - 1:
                     raise
-                # Ждём с увеличивающейся задержкой перед следующей попыткой
-                delay = base_delay * (2 ** attempt)  # Экспоненциальная задержка: 1, 2, 4 сек.
+                # Ждём с увеличивающейся задержкой
+                delay = base_delay * (2 ** attempt)
                 await asyncio.sleep(delay)
+
+
+        return {}
+
 
     async def close(self) -> None:
         await self.client.aclose()
+
 
 
 class MaxOrderBotClient(MaxClient):
