@@ -60,12 +60,13 @@ async def handle_callback(
         try:
             request_id = int(payload.split(":", 1)[1])
             frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
-            pdf_buffer = await generate_sticker_pdf(request_id, frontend_base)
+            # Используем правильную функцию, которая возвращает bytes
+            pdf_bytes = await generate_sticker_for_request(request_id, frontend_base)
             client = MaxOrderBotClient()
             try:
                 await client.send_file(
                     user_id=user_id,
-                    file_bytes=pdf_buffer.getvalue(),
+                    file_bytes=pdf_bytes,  # уже bytes, не нужно .getvalue()
                     filename=f"sticker_{request_id}.pdf",
                     caption=f"🖨️ Наклейка для заявки №{request_id}",
                 )
@@ -74,7 +75,6 @@ async def handle_callback(
                 await client.close()
         except Exception as e:
             logger.error(f"Ошибка генерации PDF: {e}")
-            # ... обработка ошибок
             client = MaxOrderBotClient()
             try:
                 await client.answer_callback(callback_id=callback_id, notification="❌ Ошибка")
