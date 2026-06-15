@@ -188,7 +188,6 @@ class MaxClient:
         filename: str,
         caption: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Отправляет файл пользователю через двухэтапный процесс MAX API."""
         # Шаг 1: Получить URL для загрузки
         upload_resp = await self._request(
             "POST",
@@ -203,7 +202,7 @@ class MaxClient:
 
         # Шаг 2: Загрузить файл
         async with httpx.AsyncClient() as client:
-            files = {"data": (filename, file_bytes, "application/octet-stream")}
+            files = {"data": (filename, file_bytes, "application/pdf")}
             upload_result = await client.post(upload_url, files=files)
             upload_result.raise_for_status()
             upload_data = upload_result.json()
