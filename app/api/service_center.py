@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.session import get_session
-from app.db.models import Master
+from app.db.models import Master, ServiceCenter
 from app.api.deps import get_current_master
 
 router = APIRouter(prefix="/api/service-center", tags=["service-center"])
@@ -51,15 +52,25 @@ async def update_my_service_center(
         raise HTTPException(403, "Только администратор может редактировать данные сервис-центра")
     if not current_master.service_center:
         raise HTTPException(404, "Сервис-центр не найден")
-    sc = current_master.service_center
+
+    # ✅ Явно загружаем объект в текущей сессии
+    sc_id = current_master.service_center.id
+    result = await db.execute(select(ServiceCenter).where(ServiceCenter.id == sc_id))
+    sc = result.scalar_one_or_none()
+    if not sc:
+        raise HTTPException(404, "Сервис-центр не найден")
+
+    # Обновляем поля
     if payload.address is not None:
         sc.address = payload.address
     if payload.website is not None:
         sc.website = payload.website
     if payload.phone is not None:
         sc.phone = payload.phone
+
     await db.commit()
-    # refresh не нужен – sc уже содержит обновлённые поля (так как мы изменили прямо в объекте)
+    await db.refresh(sc)  # теперь refresh работает, так как объект в сессии
+
     return ServiceCenterOut(
         id=sc.id,
         service_id=sc.service_id,
