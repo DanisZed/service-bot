@@ -181,45 +181,48 @@ class MaxClient:
             context=f"answer_callback callback_id={callback_id}",
         )
 
-    async def send_file(
-        self,
-        user_id: int,
-        file_bytes: bytes,
-        filename: str,
-        caption: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        # Шаг 1: Получить URL для загрузки
-        upload_resp = await self._request(
-            "POST",
-            "/uploads",
-            params={"type": "file"},
-            context="get_upload_url",
-        )
-        if not upload_resp or "url" not in upload_resp:
-            raise Exception("Не удалось получить URL для загрузки")
-        upload_url = upload_resp["url"]
-        token = upload_resp.get("token")
+async def send_file(
+    self,
+    user_id: int,
+    file_bytes: bytes,
+    filename: str,
+    caption: Optional[str] = None,
+) -> Dict[str, Any]:
+    # Шаг 1: Получаем ссылку для загрузки
+    upload_resp = await self._request(
+        "POST",
+        "/uploads",
+        params={"type": "file"},
+        context="get_upload_url",
+    )
+    if not upload_resp or "url" not in upload_resp:
+        raise Exception("Не удалось получить URL для загрузки")
+    upload_url = upload_resp["url"]
+    token = upload_resp.get("token")
 
-        # Шаг 2: Загрузить файл
-        async with httpx.AsyncClient() as client:
-            files = {"data": (filename, file_bytes, "application/pdf")}
-            upload_result = await client.post(upload_url, files=files)
-            upload_result.raise_for_status()
-            upload_data = upload_result.json()
-        attachment_token = token or upload_data.get("token")
-        if not attachment_token:
-            raise Exception("Не удалось получить токен для вложения")
+    # Шаг 2: Загружаем файл
+    async with httpx.AsyncClient() as client:
+        files = {"file": (filename, file_bytes, "application/pdf")}
+        # Важно: некоторые версии MAX API требуют поле "data", а не "file". Пробуем file.
+        upload_result = await client.post(upload_url, files=files)
+        upload_result.raise_for_status()
+        upload_data = upload_result.json()
 
-        # Шаг 3: Отправить сообщение с вложением
-        attachments = [{
-            "type": "file",
-            "payload": {"token": attachment_token}
-        }]
-        if caption:
-            return await self.send_text_to_user(user_id, caption, attachments)
-        else:
-            return await self.send_text_to_user(user_id, "", attachments)
+    # Токен может прийти на втором шаге
+    attachment_token = token or upload_data.get("token")
+    if not attachment_token:
+        raise Exception("Не удалось получить токен вложения")
 
+    # Шаг 3: Отправляем сообщение с вложением
+    attachments = [{
+        "type": "file",
+        "payload": {"token": attachment_token}
+    }]
+    if caption:
+        return await self.send_text_to_user(user_id, caption, attachments)
+    else:
+        return await self.send_text_to_user(user_id, "", attachments)
+        
     async def close(self) -> None:
         await self.client.aclose()
 
