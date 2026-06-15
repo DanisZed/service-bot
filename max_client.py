@@ -27,6 +27,7 @@ class MaxClient:
         self,
         token: Optional[str] = None,
         *,
+        self.base_url = MAX_API_BASE_URL
         connect_timeout: float = 3.0,
         read_timeout: float = 15.0,
         write_timeout: float = 10.0,
@@ -210,6 +211,7 @@ class MaxClient:
         caption: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Отправляет файл (изображение/документ) пользователю MAX."""
+        # Используем self.base_url, который мы добавили
         url = f"{self.base_url}/v1/users/{user_id}/files"
         headers = {"Authorization": f"Bearer {self.token}"}
         files = {"file": (filename, file_bytes, "image/png")}
@@ -232,3 +234,4 @@ class MaxOrderBotClient(MaxClient):
         if not order_token:
             raise ValueError("MAX_ORDER_BOT_TOKEN is not set")
         super().__init__(token=order_token, **kwargs)        
+        self.base_url = MAX_API_BASE_URL   # <-- добавить
