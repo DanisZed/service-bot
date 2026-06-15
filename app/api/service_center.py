@@ -59,7 +59,7 @@ async def update_my_service_center(
     if payload.phone is not None:
         sc.phone = payload.phone
     await db.commit()
-    await db.refresh(sc)
+    # refresh не нужен – sc уже содержит обновлённые поля (так как мы изменили прямо в объекте)
     return ServiceCenterOut(
         id=sc.id,
         service_id=sc.service_id,
