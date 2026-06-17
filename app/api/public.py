@@ -13,6 +13,8 @@ class PublicRequestOut(BaseModel):
     id: int
     status: str
     client_name: Optional[str]
+    master_id: Optional[int] = None
+    assigned_master_id: Optional[int] = None
     device: str          # можно склеить main_category + subtype
     problem_description: str
     what_was_done: Optional[str]
@@ -37,6 +39,8 @@ async def get_public_request(
         id=req.id,
         status=req.status,
         client_name=req.client_name,
+        master_id=req.master_id,
+        assigned_master_id=req.assigned_master_id,
         device=device,
         problem_description=req.problem_description,
         what_was_done=req.what_was_done,
