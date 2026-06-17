@@ -50,6 +50,9 @@ async def activate_master(master_id: str, user_id: int) -> Tuple[str, Optional[L
         return text, kb
 
 
+# Глобальный сет для отслеживания обрабатываемых callback'ов
+_processing_callbacks = set()
+
 async def handle_callback(
     callback: Dict[str, Any],
     user_id: int,
@@ -57,37 +60,47 @@ async def handle_callback(
     payload: str
 ) -> None:
     if payload.startswith("sticker:"):
-        client = MaxOrderBotClient()
+        # Защита от дублирования
+        if callback_id in _processing_callbacks:
+            logger.warning(f"Callback {callback_id} already processing, skipping duplicate")
+            return
+        _processing_callbacks.add(callback_id)
         try:
-            # 1. Сразу отвечаем на callback – убираем «часики» и показываем уведомление
-            await client.answer_callback(
-                callback_id=callback_id,
-                notification="⏳ Генерация наклейки..."
-            )
-            # 2. Генерируем PDF (это может занять 1–2 секунды)
-            request_id = int(payload.split(":", 1)[1])
-            frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
-            pdf_bytes = await generate_sticker_for_request(request_id, frontend_base)
-            # 3. Отправляем файл
-            await client.send_file(
-                user_id=user_id,
-                file_bytes=pdf_bytes,
-                filename=f"sticker_{request_id}.pdf",
-                caption=f"🖨️ Гарантийный талон для заявки №{request_id}",
-            )
-            # Файл отправлен – всё хорошо, дополнительное уведомление не нужно
-        except Exception as e:
-            logger.error(f"Ошибка генерации PDF: {e}")
+            client = MaxOrderBotClient()
             try:
-                # Если ошибка – показываем красное уведомление
+                # 1. Мгновенно отвечаем на callback – кнопка перестаёт "крутиться"
                 await client.answer_callback(
                     callback_id=callback_id,
-                    notification="❌ Ошибка генерации"
+                    notification="⏳ Генерация наклейки..."
                 )
-            except:
-                pass
+                # 2. Генерируем PDF (это может занять 1–2 секунды)
+                request_id = int(payload.split(":", 1)[1])
+                frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+                logger.info(f"Generating sticker for request {request_id}, callback {callback_id}")
+                pdf_bytes = await generate_sticker_for_request(request_id, frontend_base)
+                # 3. Отправляем файл
+                await client.send_file(
+                    user_id=user_id,
+                    file_bytes=pdf_bytes,
+                    filename=f"sticker_{request_id}.pdf",
+                    caption=f"🖨️ Наклейка для заявки №{request_id}",
+                )
+                logger.info(f"Sticker for request {request_id} sent successfully")
+            except Exception as e:
+                logger.error(f"Ошибка генерации/отправки наклейки: {e}")
+                # Показываем ошибку в уведомлении (только если ещё не отвечали)
+                try:
+                    await client.answer_callback(
+                        callback_id=callback_id,
+                        notification="❌ Ошибка генерации"
+                    )
+                except:
+                    pass
+            finally:
+                await client.close()
         finally:
-            await client.close()
+            # Убираем ID из сета после обработки
+            _processing_callbacks.discard(callback_id)
         return
 
 
