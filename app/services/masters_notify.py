@@ -184,11 +184,11 @@ async def notify_master_request_created(request_id: int) -> None:
 
         buttons_rows: List[List[dict]] = []
         if yandex_url:
-            buttons_rows.append([{"type": "link", "text": "Проложить маршрут (Яндекс)", "url": yandex_url}])
+            buttons_rows.append([{"type": "link", "text": "🚘 Открыть Яндекс.Навигатор", "url": yandex_url}])
         if google_url:
-            buttons_rows.append([{"type": "link", "text": "Добавить в Google Календарь", "url": google_url}])
+            buttons_rows.append([{"type": "link", "text": "📅 Добавить в Google Календарь", "url": google_url}])
         # ... после добавления yandex_url и google_url ...
-        buttons_rows.append([{"type": "callback", "text": "🖨️ Наклейка", "payload": f"sticker:{req.id}"}])
+        buttons_rows.append([{"type": "callback", "text": "🖨️ Гарантийный талон", "payload": f"sticker:{req.id}"}])
         attachments = None
         if buttons_rows:
             attachments = [{"type": "inline_keyboard", "payload": {"buttons": buttons_rows}}]

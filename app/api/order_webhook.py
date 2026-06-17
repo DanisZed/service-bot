@@ -57,29 +57,37 @@ async def handle_callback(
     payload: str
 ) -> None:
     if payload.startswith("sticker:"):
+        client = MaxOrderBotClient()
         try:
+            # 1. Сразу отвечаем на callback – убираем «часики» и показываем уведомление
+            await client.answer_callback(
+                callback_id=callback_id,
+                notification="⏳ Генерация наклейки..."
+            )
+            # 2. Генерируем PDF (это может занять 1–2 секунды)
             request_id = int(payload.split(":", 1)[1])
             frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
-            # Используем правильную функцию, которая возвращает bytes
             pdf_bytes = await generate_sticker_for_request(request_id, frontend_base)
-            client = MaxOrderBotClient()
-            try:
-                await client.send_file(
-                    user_id=user_id,
-                    file_bytes=pdf_bytes,  # уже bytes, не нужно .getvalue()
-                    filename=f"sticker_{request_id}.pdf",
-                    caption=f"🖨️ Наклейка для заявки №{request_id}",
-                )
-                await client.answer_callback(callback_id=callback_id, notification="✅ Наклейка готова")
-            finally:
-                await client.close()
+            # 3. Отправляем файл
+            await client.send_file(
+                user_id=user_id,
+                file_bytes=pdf_bytes,
+                filename=f"sticker_{request_id}.pdf",
+                caption=f"🖨️ Гарантийный талон для заявки №{request_id}",
+            )
+            # Файл отправлен – всё хорошо, дополнительное уведомление не нужно
         except Exception as e:
             logger.error(f"Ошибка генерации PDF: {e}")
-            client = MaxOrderBotClient()
             try:
-                await client.answer_callback(callback_id=callback_id, notification="❌ Ошибка")
-            finally:
-                await client.close()
+                # Если ошибка – показываем красное уведомление
+                await client.answer_callback(
+                    callback_id=callback_id,
+                    notification="❌ Ошибка генерации"
+                )
+            except:
+                pass
+        finally:
+            await client.close()
         return
 
 

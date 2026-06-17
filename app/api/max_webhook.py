@@ -160,7 +160,7 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
                     user_id=user_id,
                     file_bytes=img_bytes,
                     filename=f"sticker_{request_id}.png",
-                    caption=f"Наклейка для заявки №{request_id}",
+                    caption=f"Гарантийный талон для заявки №{request_id}",
                 )
                 # Отвечаем на callback (убираем «часики»)
                 await client.answer_callback(callback_id=callback_id, notification="✅ Наклейка готова")
