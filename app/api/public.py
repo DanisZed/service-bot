@@ -18,6 +18,7 @@ class PublicRequestOut(BaseModel):
     device: str          # ← только тип техники (subtype) или main_category, если subtype нет
     problem_description: str
     what_was_done: Optional[str]
+    done_at: Optional[str] = None
     total_amount: Optional[float]
     created_at: str
     date_iso: Optional[str]
@@ -72,4 +73,6 @@ async def get_public_request(
         master_id=req.master_id,
         assigned_master_id=req.assigned_master_id,
         master_name=master_name,
+        warranty_period=req.warranty_period,
+        done_at=req.done_at.isoformat() if req.done_at else None,
     )
