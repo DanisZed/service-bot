@@ -313,63 +313,63 @@ class UnifiedDialogService:
         if not address or address == "Мастерская":
             return None
         return f"https://yandex.ru/navi?text={address.replace(' ', '+')}"
-        
+
 
     def _build_google_calendar_url(
-    self,
-    order_no: Optional[int],
-    date_iso: Optional[str],
-    time_slot: Optional[str],
-    address: Optional[str],
-    address_details: Optional[str],
-    comment: Optional[str],
-    phone: Optional[str],
-) -> str:
-    order_part = f"Заявка №{order_no}" if order_no is not None else "Заявка"
-    text_param = order_part.replace(" ", "+")
-    address_param = (address or "").replace(" ", "+")
-    details_str = comment or ""
-    if address_details:
-        details_str += f" ({address_details})"
-    if phone:
-        if details_str:
-            details_str += ". "
-        # Для Google Календаря заменяем +7 на 8, так как он режет плюсы
-        phone_display = phone.replace("+7", "8", 1) if phone.startswith("+7") else phone
-        details_str += f"Телефон: {phone_display}"
-    details_param = details_str.replace(" ", "+")
+        self,
+        order_no: Optional[int],
+        date_iso: Optional[str],
+        time_slot: Optional[str],
+        address: Optional[str],
+        address_details: Optional[str],
+        comment: Optional[str],
+        phone: Optional[str],
+    ) -> str:
+        order_part = f"Заявка №{order_no}" if order_no is not None else "Заявка"
+        text_param = order_part.replace(" ", "+")
+        address_param = (address or "").replace(" ", "+")
+        details_str = comment or ""
+        if address_details:
+            details_str += f" ({address_details})"
+        if phone:
+            if details_str:
+                details_str += ". "
+            # Для Google Календаря заменяем +7 на 8, так как он режет плюсы
+            phone_display = phone.replace("+7", "8", 1) if phone.startswith("+7") else phone
+            details_str += f"Телефон: {phone_display}"
+        details_param = details_str.replace(" ", "+")
 
-    if date_iso:
-        try:
-            d = datetime.strptime(date_iso, "%Y-%m-%d")
-        except ValueError:
+        if date_iso:
+            try:
+                d = datetime.strptime(date_iso, "%Y-%m-%d")
+            except ValueError:
+                d = datetime.now()
+        else:
             d = datetime.now()
-    else:
-        d = datetime.now()
 
-    if time_slot and "-" in time_slot:
-        start_str, end_str = time_slot.split("-", 1)
-        try:
-            start_dt = datetime.combine(d.date(), datetime.strptime(start_str, "%H:%M").time())
-            end_dt = datetime.combine(d.date(), datetime.strptime(end_str, "%H:%M").time())
-        except ValueError:
-            start_dt = d
-            end_dt = d + timedelta(hours=1)
-    else:
-        start_dt = datetime.combine(d.date(), datetime.strptime("10:00", "%H:%M").time())
-        end_dt = start_dt + timedelta(hours=1)
+        if time_slot and "-" in time_slot:
+            start_str, end_str = time_slot.split("-", 1)
+            try:
+                start_dt = datetime.combine(d.date(), datetime.strptime(start_str, "%H:%M").time())
+                end_dt = datetime.combine(d.date(), datetime.strptime(end_str, "%H:%M").time())
+            except ValueError:
+                start_dt = d
+                end_dt = d + timedelta(hours=1)
+        else:
+            start_dt = datetime.combine(d.date(), datetime.strptime("10:00", "%H:%M").time())
+            end_dt = start_dt + timedelta(hours=1)
 
-    dates_param = f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
+        dates_param = f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
 
-    base = "https://www.google.com/calendar/render"
-    parts = [
-        "action=TEMPLATE",
-        f"text={text_param}",
-        f"dates={dates_param}",
-        f"details={details_param}",
-        f"location={address_param}",
-    ]
-    return base + "?" + "&".join(parts)
+        base = "https://www.google.com/calendar/render"
+        parts = [
+            "action=TEMPLATE",
+            f"text={text_param}",
+            f"dates={dates_param}",
+            f"details={details_param}",
+            f"location={address_param}",
+        ]
+        return base + "?" + "&".join(parts)
 
     def _ask_name(self) -> Tuple[str, List[dict]]:
         """Запрашивает имя клиента с кнопкой 'Неизвестно'."""
