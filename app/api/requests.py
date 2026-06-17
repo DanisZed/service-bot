@@ -48,6 +48,8 @@ class ServiceRequestOut(BaseModel):
     # Описание поломки
     problem_description: str
     what_was_done: Optional[str] = None
+    repair_description: str
+    warranty_period: Optional[int] = None
 
     # Дата/время выезда
     date_iso: Optional[date] = None
@@ -95,6 +97,8 @@ class ServiceRequestUpdate(BaseModel):
     
     # Выполненные работы
     what_was_done: Optional[str] = None
+    repair_description: Optional[str] = None
+    warranty_period: Optional[int] = None
 
     # Техника и услуга
     main_category: Optional[str] = None
@@ -115,6 +119,8 @@ class CreateRequestFromWeb(BaseModel):
     subtype: str = "general"
     service_title: Optional[str] = None
     custom_device: Optional[str] = None
+    repair_description: str = ""   # пустая строка по умолчанию
+    warranty_period: Optional[int] = None
     total_amount: Optional[float] = None
     parts_cost: Optional[float] = None
     source: str = "web"
@@ -270,6 +276,10 @@ async def update_service_request(
         obj.subtype = payload.subtype
     if payload.service_title is not None:
         obj.service_title = payload.service_title
+    if payload.repair_description is not None:
+        obj.repair_description = payload.repair_description
+    if payload.warranty_period is not None:
+        obj.warranty_period = payload.warranty_period
 
     await db.commit()
     await db.refresh(obj)

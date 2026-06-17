@@ -82,7 +82,9 @@ class ServiceRequest(Base):
 
     service_title = Column(Text, nullable=True)
     problem_description = Column(Text, nullable=False)
+    repair_description = Column(Text, nullable=False)
     what_was_done = Column(Text, nullable=True)
+    warranty_period = Column(Integer, nullable=True)   # срок гарантии в месяцах
 
     location_type = Column(String(32), nullable=False)
     address = Column(Text, nullable=True)

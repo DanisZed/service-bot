@@ -76,6 +76,8 @@ async def create_service_request(session: AsyncSession, data: Dict[str, Any]) ->
 
         service_title=data.get("service_title"),
         problem_description=data["problem_description"],
+        repair_description=data.get("repair_description", ""),
+        warranty_period=data.get("warranty_period"),
 
         location_type=data["location_type"],
         address=data.get("address"),
