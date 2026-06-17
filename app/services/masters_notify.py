@@ -131,7 +131,8 @@ async def notify_master_request_created(request_id: int) -> None:
             return
 
         # Формирование текста сообщения (без изменений)
-        lines: List[str] = [f"📝 ЗАЯВКА № {req.id}\n"]
+        display_number = req.master_seq if req.master_seq is not None else req.id
+        lines: List[str] = [f"📝 ЗАЯВКА № {display_number}\n"]
 
         # if req.service_title or req.subtype:            
         #    lines.append(f"🔧 Вид техники: {SUBTYPE_NAMES.get(req.subtype, req.subtype)}")

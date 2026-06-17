@@ -736,7 +736,8 @@ class UnifiedDialogService:
             # Формируем клавиатуру из трёх рядов
             kb = self._inline_keyboard([row1, row2, row3])
 
-            reply = f"✅ Заявка №{req.id} успешно создана! Выберите действие:"
+            display_number = req.master_seq if req.master_seq is not None else req.id
+            reply = f"✅ Заявка №{display_number} успешно создана! Выберите действие:"
             self.reset(user_id)
             return reply, kb
 

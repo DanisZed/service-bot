@@ -1,12 +1,11 @@
 import os
-from io import BytesIO
-from datetime import datetime
+import io
 from typing import Optional
+from datetime import datetime
+from jinja2 import Template
+from weasyprint import HTML, CSS
 import qrcode
 import base64
-
-from weasyprint import HTML, CSS
-from jinja2 import Template
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -14,7 +13,19 @@ from app.db.session import AsyncSessionLocal
 from app.db.models import ServiceRequest, Master
 
 
-async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> BytesIO:
+def generate_qr_data_url(url: str) -> str:
+    """Генерирует QR-код и возвращает Data URL для вставки в HTML."""
+    qr = qrcode.QRCode(box_size=8, border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/png;base64,{img_base64}"
+
+
+async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> io.BytesIO:
     """
     Генерирует PDF-файл наклейки (50x80 мм) для печати на Niimbot B1 Pro.
     Возвращает BytesIO с PDF-данными.
@@ -46,6 +57,9 @@ async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> BytesIO:
         master_full_name = f"{owner.lastname or ''} {owner.name or ''}".strip()
         created_at_str = req.created_at.strftime("%d.%m.%y")
 
+        # Определяем отображаемый номер заявки (порядковый номер мастера)
+        display_number = req.master_seq if req.master_seq is not None else req.id
+
         # Генерируем QR-код в виде base64
         qr_data_url = generate_qr_data_url(f"{base_qr_url}/requests/{request_id}?master_id={owner.id}")
 
@@ -57,7 +71,7 @@ async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> BytesIO:
 
         # Передаём в шаблон все переменные, которые он ожидает
         html_content = template.render(
-            request_id=request_id,
+            request_id=display_number,          # <--- ОТОБРАЖАЕМЫЙ НОМЕР
             created_at=created_at_str,
             master_full_name=master_full_name,
             master_phone=owner.phone,
@@ -74,7 +88,7 @@ async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> BytesIO:
         )
 
         # Генерируем PDF
-        pdf_file = BytesIO()
+        pdf_file = io.BytesIO()
         HTML(string=html_content, base_url=os.path.dirname(template_path)).write_pdf(
             target=pdf_file,
             stylesheets=[CSS(string='@page { size: 50mm 80mm; margin: 2mm; }')]
@@ -82,23 +96,7 @@ async def generate_sticker_pdf(request_id: int, base_qr_url: str) -> BytesIO:
         pdf_file.seek(0)
         return pdf_file
 
-
-def generate_qr_data_url(url: str) -> str:
-    """Генерирует QR-код и возвращает Data URL для вставки в HTML."""
-    qr = qrcode.QRCode(box_size=8, border=2)
-    qr.add_data(url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-    buffered = BytesIO()
-    img.save(buffered, format="PNG")
-    img_base64 = base64.b64encode(buffered.getvalue()).decode()
-    return f"data:image/png;base64,{img_base64}"
-
-# Сохраняем совместимость со старыми вызовами (эндпоинт /api/requests/{id}/sticker)
+# Для совместимости со старым именем функции (если где-то ещё используется)
 async def generate_sticker_for_request(request_id: int, base_qr_url: str) -> bytes:
-    """
-    Обёртка для генерации PDF (совместимость со старым именем функции).
-    Возвращает байты PDF-файла.
-    """
     pdf_buffer = await generate_sticker_pdf(request_id, base_qr_url)
     return pdf_buffer.getvalue()
