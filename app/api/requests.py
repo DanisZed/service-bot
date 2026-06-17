@@ -48,7 +48,7 @@ class ServiceRequestOut(BaseModel):
     # Описание поломки
     problem_description: str
     what_was_done: Optional[str] = None
-    repair_description: str
+    repair_description: Optional[str] = None
     warranty_period: Optional[int] = None
 
     # Дата/время выезда
@@ -119,7 +119,7 @@ class CreateRequestFromWeb(BaseModel):
     subtype: str = "general"
     service_title: Optional[str] = None
     custom_device: Optional[str] = None
-    repair_description: str = ""   # пустая строка по умолчанию
+    repair_description: Optional[str] = None
     warranty_period: Optional[int] = None
     total_amount: Optional[float] = None
     parts_cost: Optional[float] = None
