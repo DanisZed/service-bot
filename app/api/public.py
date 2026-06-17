@@ -61,6 +61,7 @@ async def get_public_request(
 
     return PublicRequestOut(
         id=req.id,
+        master_seq=req.master_seq,              # ← добавлено
         status=req.status,
         client_name=req.client_name,
         device=device,
