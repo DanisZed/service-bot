@@ -15,7 +15,7 @@ class PublicRequestOut(BaseModel):
     id: int
     status: str
     client_name: Optional[str]
-    device: str
+    device: str          # ← только тип техники (subtype) или main_category, если subtype нет
     problem_description: str
     what_was_done: Optional[str]
     total_amount: Optional[float]
@@ -24,7 +24,7 @@ class PublicRequestOut(BaseModel):
     time_slot: Optional[str]
     master_id: Optional[int]
     assigned_master_id: Optional[int]
-    master_name: Optional[str]   # ← полное имя мастера
+    master_name: Optional[str]
 
 @router.get("/requests/{request_id}", response_model=PublicRequestOut)
 async def get_public_request(
@@ -45,7 +45,6 @@ async def get_public_request(
     master = req.assigned_master or req.master
     master_name = None
     if master:
-        # Формируем имя из lastname и name
         parts = []
         if master.lastname:
             parts.append(master.lastname)
@@ -54,10 +53,10 @@ async def get_public_request(
         if parts:
             master_name = " ".join(parts).strip()
         else:
-            # Если нет ни фамилии, ни имени, используем строковый master_id
             master_name = master.master_id
 
-    device = f"{req.main_category} / {req.subtype}" if req.subtype else req.main_category
+    # device = только subtype, если есть, иначе main_category
+    device = req.subtype if req.subtype else req.main_category
 
     return PublicRequestOut(
         id=req.id,
