@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/public", tags=["public"])
 
 class PublicRequestOut(BaseModel):
     id: int
+    master_seq: Optional[int] = None   # ← добавить
     status: str
     client_name: Optional[str]
     device: str          # ← только тип техники (subtype) или main_category, если subtype нет
