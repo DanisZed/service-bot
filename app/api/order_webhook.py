@@ -71,7 +71,7 @@ async def handle_callback(
                 # 1. Мгновенно отвечаем на callback – кнопка перестаёт "крутиться"
                 await client.answer_callback(
                     callback_id=callback_id,
-                    notification="⏳ Генерация наклейки..."
+                    notification="⏳ Генерация гарантийного талона..."
                 )
                 # 2. Генерируем PDF (это может занять 1–2 секунды)
                 request_id = int(payload.split(":", 1)[1])
@@ -83,7 +83,7 @@ async def handle_callback(
                     user_id=user_id,
                     file_bytes=pdf_bytes,
                     filename=f"sticker_{request_id}.pdf",
-                    caption=f"🖨️ Наклейка для заявки №{request_id}",
+                    caption=f"🖨️ Гарантийный талон №{request_id}",
                 )
                 logger.info(f"Sticker for request {request_id} sent successfully")
             except Exception as e:
