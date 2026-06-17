@@ -147,34 +147,34 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
 
 
     # внутри handle_message_callback после получения user_id и callback_id
-        if payload.startswith("sticker:"):
-            try:
-                request_id = int(payload.split(":", 1)[1])
-                # Загружаем заявку, чтобы получить master_seq
-                async with AsyncSessionLocal() as session:
-                    from app.db.models import ServiceRequest
-                    req = await session.get(ServiceRequest, request_id)
-                    if not req:
-                        raise ValueError("Заявка не найдена")
-                    display_number = req.master_seq if req.master_seq is not None else req.id
+    if payload.startswith("sticker:"):
+        try:
+            request_id = int(payload.split(":", 1)[1])
+            # Загружаем заявку, чтобы получить master_seq
+            async with AsyncSessionLocal() as session:
+                from app.db.models import ServiceRequest
+                req = await session.get(ServiceRequest, request_id)
+                if not req:
+                    raise ValueError("Заявка не найдена")
+                display_number = req.master_seq if req.master_seq is not None else req.id
 
-                frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
-                img_bytes = await generate_sticker_for_request(request_id, frontend_base)
-                client = MaxClient()
-                try:
-                    await client.send_file(
-                        user_id=user_id,
-                        file_bytes=img_bytes,
-                        filename=f"sticker_{request_id}.png",
-                        caption=f"Гарантийный талон для заявки №{display_number}",
-                    )
-                    await client.answer_callback(callback_id=callback_id, notification="✅ Наклейка готова")
-                finally:
-                    await client.close()
-            except Exception as e:
-                logger.error(f"Ошибка генерации наклейки: {e}")
-                await client.answer_callback(callback_id=callback_id, notification="❌ Ошибка")
-            return  
+            frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+            img_bytes = await generate_sticker_for_request(request_id, frontend_base)
+            client = MaxClient()
+            try:
+                await client.send_file(
+                    user_id=user_id,
+                    file_bytes=img_bytes,
+                    filename=f"sticker_{request_id}.png",
+                    caption=f"Гарантийный талон для заявки №{display_number}",
+                )
+                await client.answer_callback(callback_id=callback_id, notification="✅ Наклейка готова")
+            finally:
+                await client.close()
+        except Exception as e:
+            logger.error(f"Ошибка генерации наклейки: {e}")
+            await client.answer_callback(callback_id=callback_id, notification="❌ Ошибка")
+        return  
 
     if not user_id or not callback_id or payload is None:
         logger.warning("Invalid message_callback event: %s", event)
