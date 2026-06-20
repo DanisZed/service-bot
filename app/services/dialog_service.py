@@ -81,7 +81,7 @@ def _get_panel_login_url(self, user_id: int) -> str:
         "type": "max_auto_login"
     }
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
-    panel_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+    panel_base = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
     return f"{panel_base}/panel?token={token}"
 
 
@@ -717,7 +717,7 @@ class UnifiedDialogService:
             })
 
             # Кнопка "Открыть в CRM"
-            panel_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+            panel_base = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
             view_request_url = f"{panel_base}/requests/{req.id}"
             row2.append({
                 "type": "link",

@@ -158,7 +158,7 @@ async def handle_message_callback(event: Dict[str, Any]) -> None:
                     raise ValueError("Заявка не найдена")
                 display_number = req.master_seq if req.master_seq is not None else req.id
 
-            frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+            frontend_base = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
             img_bytes = await generate_sticker_for_request(request_id, frontend_base)
             client = MaxClient()
             try:

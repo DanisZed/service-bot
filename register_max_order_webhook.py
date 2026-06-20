@@ -15,7 +15,7 @@ async def main():
     url = "https://platform-api.max.ru/subscriptions"
     
     payload = {
-        "url": "https://panel.master-rbt-crm.ru/order/webhook",
+        "url": "https://app.rbt-crm.ru/order/webhook",
         "update_types": ["message_created", "message_callback", "bot_started"],
         "secret": "danis_super_secret_key_2",
     }

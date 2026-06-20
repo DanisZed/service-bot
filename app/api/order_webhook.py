@@ -28,7 +28,7 @@ async def activate_master(master_id: str, user_id: int) -> Tuple[str, Optional[L
         await session.commit()
         role_text = "Администратор" if master.is_admin else "Мастер"
         name_text = master.name or master.service_name or ""
-        panel_base_url = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+        panel_base_url = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
         complete_link = f"{panel_base_url}/register?code=complete_{master.master_id}"
         kb = [{
             "type": "inline_keyboard",
@@ -75,7 +75,7 @@ async def handle_callback(
                 )
                 # 2. Генерируем PDF (это может занять 1–2 секунды)
                 request_id = int(payload.split(":", 1)[1])
-                frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+                frontend_base = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
                 logger.info(f"Generating sticker for request {request_id}, callback {callback_id}")
                 pdf_bytes = await generate_sticker_for_request(request_id, frontend_base)
                 # 3. Отправляем файл
