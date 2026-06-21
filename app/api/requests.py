@@ -160,19 +160,22 @@ async def wallboard_requests(
 ):
     """
     Данные для инфотабло:
-    - новые заявки текущего мастера
-    - заявки в работе в мастерской (location_type='workshop')
+    - новые заявки текущего мастера (в мастерской)
+    - заявки в работе в мастерской
     """
     NEW_STATUSES = ("new", "assigned")
     WORK_STATUS = "in_work"
     WORKSHOP_LOCATION = "workshop"
+    WORKSHOP_ADDRESS = "Мастерская"
 
-    # новые заявки
+    # --- новые заявки в мастерской ---
     stmt_new = (
         select(ServiceRequest)
         .where(
             ServiceRequest.master_id == current_master.id,
             ServiceRequest.status.in_(NEW_STATUSES),
+            ServiceRequest.location_type == WORKSHOP_LOCATION,
+            ServiceRequest.address == WORKSHOP_ADDRESS,
         )
         .order_by(ServiceRequest.id.desc())
         .limit(30)
@@ -181,13 +184,14 @@ async def wallboard_requests(
     rows_new = res_new.scalars().all()
     new_items = [WallboardRequestItem.model_validate(r) for r in rows_new]
 
-    # в работе в мастерской
+    # --- в работе в мастерской ---
     stmt_in = (
         select(ServiceRequest)
         .where(
             ServiceRequest.master_id == current_master.id,
             ServiceRequest.status == WORK_STATUS,
             ServiceRequest.location_type == WORKSHOP_LOCATION,
+            ServiceRequest.address == WORKSHOP_ADDRESS,
         )
         .order_by(ServiceRequest.id.desc())
         .limit(30)
