@@ -136,6 +136,7 @@ class CreateRequestFromWeb(BaseModel):
 
 class WallboardRequestItem(BaseModel):
     id: int
+    master_seq: int         # номер заявки для мастера
     status: str
     created_at: datetime
 
