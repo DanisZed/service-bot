@@ -125,6 +125,19 @@ class CreateRequestFromWeb(BaseModel):
     parts_cost: Optional[float] = None
     source: str = "web"
 
+class WallboardRequestItem(BaseModel):
+    id: int
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WallboardResponse(BaseModel):
+    new: List[WallboardRequestItem]
+    in_work: List[WallboardRequestItem]
+
 @router.get("", response_model=List[ServiceRequestOut])
 async def list_requests(
     status: Optional[str] = None,
@@ -297,3 +310,49 @@ async def get_request_sticker(
     frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
     img_bytes = await generate_sticker_for_request(request_id, frontend_base)
     return Response(content=img_bytes, media_type="image/png")
+
+
+@router.get("/wallboard", response_model=WallboardResponse)
+async def wallboard_requests(
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    """
+    Данные для инфотабло:
+    - новые заявки текущего мастера
+    - заявки в работе в мастерской (location_type='workshop')
+    """
+    NEW_STATUSES = ("new", "assigned")   # подстрой при необходимости
+    WORK_STATUS = "in_work"
+    WORKSHOP_LOCATION = "workshop"
+
+    # --- новые заявки ---
+    stmt_new = (
+        select(ServiceRequest)
+        .where(
+            ServiceRequest.master_id == current_master.id,
+            ServiceRequest.status.in_(NEW_STATUSES),
+        )
+        .order_by(ServiceRequest.id.desc())
+        .limit(30)
+    )
+    res_new = await db.execute(stmt_new)
+    rows_new = res_new.scalars().all()
+    new_items = [WallboardRequestItem.model_validate(r) for r in rows_new]
+
+    # --- в работе в мастерской ---
+    stmt_in = (
+        select(ServiceRequest)
+        .where(
+            ServiceRequest.master_id == current_master.id,
+            ServiceRequest.status == WORK_STATUS,
+            ServiceRequest.location_type == WORKSHOP_LOCATION,
+        )
+        .order_by(ServiceRequest.id.desc())
+        .limit(30)
+    )
+    res_in = await db.execute(stmt_in)
+    rows_in = res_in.scalars().all()
+    in_items = [WallboardRequestItem.model_validate(r) for r in rows_in]
+
+    return WallboardResponse(new=new_items, in_work=in_items)

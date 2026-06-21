@@ -14,23 +14,14 @@ from app.db.models import Master
 import jwt
 from jwt import InvalidTokenError
 
-
 router = APIRouter(prefix="/api/master/auth", tags=["master-auth"])
-
 
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
     "4gOWnBzTs7ec0HTS12rpErnILvUGq-ZyK2HFWsdBRK5QVAGQeQnEgp1fmjEmzzbn1v3TAu_i2GLQQ14z7Es3QA",
 )
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
-
-# База для мобильной/веб панели (app.*)
 PANEL_BASE_URL = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
-
-# Общие настройки куки для всех поддоменов rbt-crm.ru
-COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN", ".rbt-crm.ru")
-COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")  # или "none" при необходимости
-COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 дней
 
 
 class PanelTokenOut(BaseModel):
@@ -90,10 +81,9 @@ def _encode_cookie(response: Response, token: str):
         value=token,
         httponly=True,
         secure=True,
-        samesite=COOKIE_SAMESITE,
-        max_age=COOKIE_MAX_AGE,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
         path="/",
-        domain=COOKIE_DOMAIN,
     )
 
 
@@ -166,7 +156,6 @@ async def consume_panel_token(
         raise HTTPException(status_code=401, detail="Master not found or inactive")
 
     access_token = _create_access_token(master)
-    # Здесь пока оставляем редирект в мобильную панель:
     resp = RedirectResponse(url=f"{PANEL_BASE_URL}/app/dashboard", status_code=302)
     _encode_cookie(resp, access_token)
     return resp
@@ -274,11 +263,19 @@ async def complete_registration(
     )
 
     resp = JSONResponse(content=response_data.model_dump())
-    _encode_cookie(resp, access_token)
+    resp.set_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        value=access_token,
+        httponly=True,
+        max_age=3600 * 24 * 7,
+        samesite="lax",
+        secure=True,
+        path="/",
+    )
     return resp
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
 async def logout(response: Response):
-    response.delete_cookie(ACCESS_TOKEN_COOKIE_NAME, path="/", domain=COOKIE_DOMAIN)
+    response.delete_cookie(ACCESS_TOKEN_COOKIE_NAME, path="/")
     return {"detail": "Logged out"}
