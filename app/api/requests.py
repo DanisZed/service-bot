@@ -159,11 +159,11 @@ async def wallboard_requests(
     - новые заявки текущего мастера
     - заявки в работе в мастерской (location_type='workshop')
     """
-    NEW_STATUSES = ("new", "assigned")   # подстрой при необходимости
+    NEW_STATUSES = ("new", "assigned")
     WORK_STATUS = "in_work"
     WORKSHOP_LOCATION = "workshop"
 
-    # --- новые заявки ---
+    # новые заявки
     stmt_new = (
         select(ServiceRequest)
         .where(
@@ -177,7 +177,7 @@ async def wallboard_requests(
     rows_new = res_new.scalars().all()
     new_items = [WallboardRequestItem.model_validate(r) for r in rows_new]
 
-    # --- в работе в мастерской ---
+    # в работе в мастерской
     stmt_in = (
         select(ServiceRequest)
         .where(
