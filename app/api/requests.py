@@ -154,9 +154,15 @@ class WallboardRequestItem(BaseModel):
         from_attributes = True
 
 
+class WallboardMeta(BaseModel):
+    service_name: Optional[str] = None
+    address: Optional[str] = None
+
+
 class WallboardResponse(BaseModel):
     new: List[WallboardRequestItem]
     in_work: List[WallboardRequestItem]
+    meta: Optional[WallboardMeta] = None
 
 
 @router.get("/wallboard", response_model=WallboardResponse)
@@ -242,7 +248,19 @@ async def wallboard_requests(
             )
         )
 
-    return WallboardResponse(new=new_items, in_work=in_items)
+    # тут реально достаём service_name и address
+    service_name = None
+    service_address = None
+    if current_master.service_center:
+        service_name = current_master.service_center.service_name
+        service_address = current_master.service_center.address
+
+    meta = WallboardMeta(
+      service_name=service_name,
+      address=service_address,
+    )
+
+    return WallboardResponse(new=new_items, in_work=in_items, meta=meta)
 
 
 @router.get("", response_model=List[ServiceRequestOut])
