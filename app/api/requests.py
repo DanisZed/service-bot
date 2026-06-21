@@ -139,6 +139,10 @@ class WallboardRequestItem(BaseModel):
     master_seq: int         # номер заявки для мастера
     status: str
     created_at: datetime
+    # Новые поля для табло
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    problem_description: Optional[str] = None
 
     class Config:
         from_attributes = True
