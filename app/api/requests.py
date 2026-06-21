@@ -136,13 +136,19 @@ class CreateRequestFromWeb(BaseModel):
 
 class WallboardRequestItem(BaseModel):
     id: int
-    master_seq: int         # номер заявки для мастера
+    master_seq: int                 # номер заявки для мастера
     status: str
     created_at: datetime
-    # Новые поля для табло
+
+    # поля для табло
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     problem_description: Optional[str] = None
+    subtype: Optional[str] = None
+
+    # мастер / назначенный мастер
+    master_name: Optional[str] = None
+    assigned_master_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -182,7 +188,25 @@ async def wallboard_requests(
     )
     res_new = await db.execute(stmt_new)
     rows_new = res_new.scalars().all()
-    new_items = [WallboardRequestItem.model_validate(r) for r in rows_new]
+
+    new_items: List[WallboardRequestItem] = []
+    for r in rows_new:
+        new_items.append(
+            WallboardRequestItem(
+                id=r.id,
+                master_seq=r.master_seq or 0,
+                status=r.status,
+                created_at=r.created_at,
+                client_name=r.client_name,
+                client_phone=r.client_phone,
+                problem_description=r.problem_description,
+                subtype=r.subtype,
+                master_name=r.master.name if r.master else None,
+                assigned_master_name=(
+                    r.assigned_master.name if r.assigned_master else None
+                ),
+            )
+        )
 
     # --- в работе в мастерской ---
     stmt_in = (
@@ -198,7 +222,25 @@ async def wallboard_requests(
     )
     res_in = await db.execute(stmt_in)
     rows_in = res_in.scalars().all()
-    in_items = [WallboardRequestItem.model_validate(r) for r in rows_in]
+
+    in_items: List[WallboardRequestItem] = []
+    for r in rows_in:
+        in_items.append(
+            WallboardRequestItem(
+                id=r.id,
+                master_seq=r.master_seq or 0,
+                status=r.status,
+                created_at=r.created_at,
+                client_name=r.client_name,
+                client_phone=r.client_phone,
+                problem_description=r.problem_description,
+                subtype=r.subtype,
+                master_name=r.master.name if r.master else None,
+                assigned_master_name=(
+                    r.assigned_master.name if r.assigned_master else None
+                ),
+            )
+        )
 
     return WallboardResponse(new=new_items, in_work=in_items)
 
