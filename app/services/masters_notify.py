@@ -63,26 +63,31 @@ def _build_google_calendar_url(
     title = f"Заявка №{order_no}" if order_no is not None else "Заявка"
     text_param = title.replace(" ", "+")
     address_param = (address or "").replace(" ", "+")
+
+    # Описание
     details_str = comment or ""
     if address_details:
         details_str += f" ({address_details})"
+
+    # Телефон в формате 8XXXXXXXXXX
     if phone:
-        # phone тут в формате +7XXXXXXXXXX
         raw = "".join(ch for ch in phone if ch.isdigit())
-        # raw сейчас 7XXXXXXXXXX или 8XXXXXXXXXX или просто 9XXXXXXXXX
         if raw.startswith("7") and len(raw) == 11:
             phone_display = "8" + raw[1:]
         elif raw.startswith("8") and len(raw) == 11:
             phone_display = raw
         elif len(raw) == 10 and raw.startswith("9"):
-            phone_display = "8" + raw  # добавляем ведущую 8
+            phone_display = "8" + raw
         else:
-            phone_display = raw  # fallback, если что-то необычное
-
+            phone_display = raw
         if details_str:
             details_str += ". "
         details_str += f"Телефон: {phone_display}"
 
+    # ВАЖНО: создаём details_param, которой не хватало
+    details_param = details_str.replace(" ", "+")
+
+    # Дата / время
     if date_iso:
         try:
             d = datetime.strptime(date_iso, "%Y-%m-%d")
