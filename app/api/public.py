@@ -19,7 +19,7 @@ class PublicRequestOut(BaseModel):
     master_seq: Optional[int] = None
     status: str
     client_name: Optional[str]
-    device: str                      # subtype или main_category
+    device: str
     problem_description: str
     what_was_done: Optional[str]
 
@@ -34,6 +34,11 @@ class PublicRequestOut(BaseModel):
     master_id: Optional[int]
     assigned_master_id: Optional[int]
     master_name: Optional[str]
+
+    # сервисный центр
+    service_name: Optional[str] = None
+    service_address: Optional[str] = None
+    service_phone: Optional[str] = None
 
     # гарантия
     warranty_period: Optional[int] = None
@@ -50,6 +55,7 @@ async def get_public_request(
         .where(ServiceRequest.id == request_id)
         .options(selectinload(ServiceRequest.master))
         .options(selectinload(ServiceRequest.assigned_master))
+        .options(selectinload(ServiceRequest.service_center))
     )
     req: ServiceRequest | None = result.scalar_one_or_none()
     if not req:
@@ -69,8 +75,17 @@ async def get_public_request(
         else:
             master_name = master.master_id
 
-    # device = только subtype, если есть, иначе main_category
+    # device = subtype, если есть, иначе main_category
     device = req.subtype if req.subtype else req.main_category
+
+    # данные сервисного центра
+    service_name: Optional[str] = None
+    service_address: Optional[str] = None
+    service_phone: Optional[str] = None
+    if req.service_center:
+        service_name = req.service_center.service_name
+        service_address = req.service_center.address
+        service_phone = req.service_center.phone
 
     return PublicRequestOut(
         id=req.id,
@@ -87,6 +102,9 @@ async def get_public_request(
         master_id=req.master_id,
         assigned_master_id=req.assigned_master_id,
         master_name=master_name,
+        service_name=service_name,
+        service_address=service_address,
+        service_phone=service_phone,
         warranty_period=req.warranty_period,
         done_at=req.done_at.isoformat() if req.done_at else None,
     )
