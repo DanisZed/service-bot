@@ -59,7 +59,6 @@ def _build_google_calendar_url(
     address_details: Optional[str],
     comment: Optional[str],
     phone: Optional[str],
-    tz: str = "Europe/Moscow",
 ) -> str:
     title = f"Заявка №{order_no}" if order_no is not None else "Заявка"
     text_param = title.replace(" ", "+")
@@ -68,10 +67,21 @@ def _build_google_calendar_url(
     if address_details:
         details_str += f" ({address_details})"
     if phone:
+        # phone тут в формате +7XXXXXXXXXX
+        raw = "".join(ch for ch in phone if ch.isdigit())
+        # raw сейчас 7XXXXXXXXXX или 8XXXXXXXXXX или просто 9XXXXXXXXX
+        if raw.startswith("7") and len(raw) == 11:
+            phone_display = "8" + raw[1:]
+        elif raw.startswith("8") and len(raw) == 11:
+            phone_display = raw
+        elif len(raw) == 10 and raw.startswith("9"):
+            phone_display = "8" + raw  # добавляем ведущую 8
+        else:
+            phone_display = raw  # fallback, если что-то необычное
+
         if details_str:
             details_str += ". "
-        details_str += f"Телефон: +{phone}"
-    details_param = details_str.replace(" ", "+")
+        details_str += f"Телефон: {phone_display}"
 
     if date_iso:
         try:
@@ -110,7 +120,6 @@ def _build_google_calendar_url(
         f"dates={dates_param}",
         f"details={details_param}",
         f"location={address_param}",
-        f"ctz={tz}",
     ]
     return base + "?" + "&".join(parts)
 

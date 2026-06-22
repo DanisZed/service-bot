@@ -350,14 +350,21 @@ class UnifiedDialogService:
         if address_details:
             details_str += f" ({address_details})"
         if phone:
+            # phone тут в формате +7XXXXXXXXXX
+            raw = "".join(ch for ch in phone if ch.isdigit())
+            # raw сейчас 7XXXXXXXXXX или 8XXXXXXXXXX или просто 9XXXXXXXXX
+            if raw.startswith("7") and len(raw) == 11:
+                phone_display = "8" + raw[1:]
+            elif raw.startswith("8") and len(raw) == 11:
+                phone_display = raw
+            elif len(raw) == 10 and raw.startswith("9"):
+                phone_display = "8" + raw  # добавляем ведущую 8
+            else:
+                phone_display = raw  # fallback, если что-то необычное
+
             if details_str:
                 details_str += ". "
-            # Для Google Календаря заменяем +7 на 8, так как он режет плюсы
-            phone_display = (
-                phone.replace("+7", "8", 1) if phone.startswith("+7") else phone
-            )
             details_str += f"Телефон: {phone_display}"
-        details_param = details_str.replace(" ", "+")
 
         if date_iso:
             try:
