@@ -1,5 +1,4 @@
 # app/api/public.py
-from datetime import datetime, date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -51,8 +50,11 @@ async def get_public_request(
     result = await db.execute(
         select(ServiceRequest)
         .where(ServiceRequest.id == request_id)
-        .options(selectinload(ServiceRequest.master))
-        .options(selectinload(ServiceRequest.assigned_master))
+        .options(
+            # грузим мастера + его сервисный центр
+            selectinload(ServiceRequest.master).selectinload(Master.service_center),
+            selectinload(ServiceRequest.assigned_master).selectinload(Master.service_center),
+        )
     )
     req: ServiceRequest | None = result.scalar_one_or_none()
     if not req:
@@ -67,20 +69,20 @@ async def get_public_request(
 
     if master:
         parts: list[str] = []
-        if master.lastname:
+        if getattr(master, "lastname", None):
             parts.append(master.lastname)
-        if master.name:
+        if getattr(master, "name", None):
             parts.append(master.name)
         if parts:
             master_name = " ".join(parts).strip()
         else:
             master_name = master.master_id
 
-        # сервисный центр через мастера
-        if master.service_center:
-            service_name = master.service_center.service_name
-            service_address = master.service_center.address
-            service_phone = master.service_center.phone
+        sc = getattr(master, "service_center", None)
+        if sc:
+            service_name = getattr(sc, "service_name", None)
+            service_address = getattr(sc, "address", None)
+            service_phone = getattr(sc, "phone", None)
 
     # устройство: subtype, если есть, иначе main_category
     device = req.subtype if req.subtype else req.main_category
@@ -93,7 +95,7 @@ async def get_public_request(
         device=device,
         problem_description=req.problem_description,
         what_was_done=req.what_was_done,
-        # стоимость = работа + запчасти
+        # работа + запчасти
         total_amount=(req.total_amount or 0) + (req.parts_cost or 0),
         created_at=req.created_at.isoformat(),
         date_iso=req.date_iso.isoformat() if req.date_iso else None,
