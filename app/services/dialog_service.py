@@ -333,81 +333,81 @@ class UnifiedDialogService:
         return f"https://yandex.ru/navi?text={address.replace(' ', '+')}"
 
     def _build_google_calendar_url(
-    order_no: Optional[int],
-    date_iso: Optional[str],
-    time_slot: Optional[str],
-    address: Optional[str],
-    address_details: Optional[str],
-    comment: Optional[str],
-    phone: Optional[str],
-) -> str:
-    title = f"Заявка №{order_no}" if order_no is not None else "Заявка"
-    text_param = title.replace(" ", "+")
-    address_param = (address or "").replace(" ", "+")
+        order_no: Optional[int],
+        date_iso: Optional[str],
+        time_slot: Optional[str],
+        address: Optional[str],
+        address_details: Optional[str],
+        comment: Optional[str],
+        phone: Optional[str],
+    ) -> str:
+        title = f"Заявка №{order_no}" if order_no is not None else "Заявка"
+        text_param = title.replace(" ", "+")
+        address_param = (address or "").replace(" ", "+")
 
-    # Описание
-    details_str = comment or ""
-    if address_details:
-        details_str += f" ({address_details})"
+        # Описание
+        details_str = comment or ""
+        if address_details:
+            details_str += f" ({address_details})"
 
-    # Телефон в формате 8XXXXXXXXXX
-    if phone:
-        raw = "".join(ch for ch in phone if ch.isdigit())
-        if raw.startswith("7") and len(raw) == 11:
-            phone_display = "8" + raw[1:]
-        elif raw.startswith("8") and len(raw) == 11:
-            phone_display = raw
-        elif len(raw) == 10 and raw.startswith("9"):
-            phone_display = "8" + raw
+        # Телефон в формате 8XXXXXXXXXX
+        if phone:
+            raw = "".join(ch for ch in phone if ch.isdigit())
+            if raw.startswith("7") and len(raw) == 11:
+                phone_display = "8" + raw[1:]
+            elif raw.startswith("8") and len(raw) == 11:
+                phone_display = raw
+            elif len(raw) == 10 and raw.startswith("9"):
+                phone_display = "8" + raw
+            else:
+                phone_display = raw
+            if details_str:
+                details_str += ". "
+            details_str += f"Телефон: {phone_display}"
+
+        # ВАЖНО: создаём details_param, которой не хватало
+        details_param = details_str.replace(" ", "+")
+
+        # Дата / время
+        if date_iso:
+            try:
+                d = datetime.strptime(date_iso, "%Y-%m-%d")
+            except ValueError:
+                d = datetime.now()
         else:
-            phone_display = raw
-        if details_str:
-            details_str += ". "
-        details_str += f"Телефон: {phone_display}"
-
-    # ВАЖНО: создаём details_param, которой не хватало
-    details_param = details_str.replace(" ", "+")
-
-    # Дата / время
-    if date_iso:
-        try:
-            d = datetime.strptime(date_iso, "%Y-%m-%d")
-        except ValueError:
             d = datetime.now()
-    else:
-        d = datetime.now()
 
-    if time_slot and "-" in time_slot:
-        start_str, end_str = time_slot.split("-", 1)
-        try:
+        if time_slot and "-" in time_slot:
+            start_str, end_str = time_slot.split("-", 1)
+            try:
+                start_dt = datetime.combine(
+                    d.date(), datetime.strptime(start_str, "%H:%M").time()
+                )
+                end_dt = datetime.combine(
+                    d.date(), datetime.strptime(end_str, "%H:%M").time()
+                )
+            except ValueError:
+                start_dt = d
+                end_dt = d + timedelta(hours=1)
+        else:
             start_dt = datetime.combine(
-                d.date(), datetime.strptime(start_str, "%H:%M").time()
+                d.date(), datetime.strptime("10:00", "%H:%M").time()
             )
-            end_dt = datetime.combine(
-                d.date(), datetime.strptime(end_str, "%H:%M").time()
-            )
-        except ValueError:
-            start_dt = d
-            end_dt = d + timedelta(hours=1)
-    else:
-        start_dt = datetime.combine(
-            d.date(), datetime.strptime("10:00", "%H:%M").time()
+            end_dt = start_dt + timedelta(hours=1)
+
+        dates_param = (
+            f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
         )
-        end_dt = start_dt + timedelta(hours=1)
 
-    dates_param = (
-        f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
-    )
-
-    base = "https://www.google.com/calendar/render"
-    parts = [
-        "action=TEMPLATE",
-        f"text={text_param}",
-        f"dates={dates_param}",
-        f"details={details_param}",
-        f"location={address_param}",
-    ]
-    return base + "?" + "&".join(parts)
+        base = "https://www.google.com/calendar/render"
+        parts = [
+            "action=TEMPLATE",
+            f"text={text_param}",
+            f"dates={dates_param}",
+            f"details={details_param}",
+            f"location={address_param}",
+        ]
+        return base + "?" + "&".join(parts)
 
     def _ask_name(self) -> Tuple[str, List[dict]]:
         """Запрашивает имя клиента с кнопкой 'Неизвестно'."""
