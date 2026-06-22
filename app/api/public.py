@@ -95,8 +95,7 @@ async def get_public_request(
         device=device,
         problem_description=req.problem_description,
         what_was_done=req.what_was_done,
-        # работа + запчасти
-        total_amount=(req.total_amount or 0) + (req.parts_cost or 0),
+        total_amount=req.total_amount,
         created_at=req.created_at.isoformat(),
         date_iso=req.date_iso.isoformat() if req.date_iso else None,
         time_slot=req.time_slot,
