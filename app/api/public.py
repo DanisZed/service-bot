@@ -1,7 +1,9 @@
 # app/api/public.py
+from datetime import datetime, date
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,22 +13,32 @@ from app.db.models import ServiceRequest, Master
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
+
 class PublicRequestOut(BaseModel):
     id: int
-    master_seq: Optional[int] = None   # ← добавить
+    master_seq: Optional[int] = None
     status: str
     client_name: Optional[str]
-    device: str          # ← только тип техники (subtype) или main_category, если subtype нет
+    device: str                      # subtype или main_category
     problem_description: str
     what_was_done: Optional[str]
-    done_at: Optional[str] = None
+
     total_amount: Optional[float]
+
+    # даты
     created_at: str
     date_iso: Optional[str]
     time_slot: Optional[str]
+
+    # мастера
     master_id: Optional[int]
     assigned_master_id: Optional[int]
     master_name: Optional[str]
+
+    # гарантия
+    warranty_period: Optional[int] = None
+    done_at: Optional[str] = None
+
 
 @router.get("/requests/{request_id}", response_model=PublicRequestOut)
 async def get_public_request(
@@ -39,15 +51,15 @@ async def get_public_request(
         .options(selectinload(ServiceRequest.master))
         .options(selectinload(ServiceRequest.assigned_master))
     )
-    req = result.scalar_one_or_none()
+    req: ServiceRequest | None = result.scalar_one_or_none()
     if not req:
         raise HTTPException(404, "Заявка не найдена")
 
     # Определяем мастера (приоритет: назначенный > владелец)
-    master = req.assigned_master or req.master
-    master_name = None
+    master: Master | None = req.assigned_master or req.master
+    master_name: Optional[str] = None
     if master:
-        parts = []
+        parts: list[str] = []
         if master.lastname:
             parts.append(master.lastname)
         if master.name:
@@ -62,7 +74,7 @@ async def get_public_request(
 
     return PublicRequestOut(
         id=req.id,
-        master_seq=req.master_seq,              # ← добавлено
+        master_seq=req.master_seq,
         status=req.status,
         client_name=req.client_name,
         device=device,
