@@ -25,12 +25,10 @@ class PublicRequestOut(BaseModel):
 
     total_amount: Optional[float]
 
-    # даты
     created_at: str
     date_iso: Optional[str]
     time_slot: Optional[str]
 
-    # мастера
     master_id: Optional[int]
     assigned_master_id: Optional[int]
     master_name: Optional[str]
@@ -55,15 +53,18 @@ async def get_public_request(
         .where(ServiceRequest.id == request_id)
         .options(selectinload(ServiceRequest.master))
         .options(selectinload(ServiceRequest.assigned_master))
-        .options(selectinload(ServiceRequest.service_center))
     )
     req: ServiceRequest | None = result.scalar_one_or_none()
     if not req:
         raise HTTPException(404, "Заявка не найдена")
 
-    # Определяем мастера (приоритет: назначенный > владелец)
+    # определяем мастера (назначенный > владелец)
     master: Master | None = req.assigned_master or req.master
     master_name: Optional[str] = None
+    service_name: Optional[str] = None
+    service_address: Optional[str] = None
+    service_phone: Optional[str] = None
+
     if master:
         parts: list[str] = []
         if master.lastname:
@@ -75,17 +76,14 @@ async def get_public_request(
         else:
             master_name = master.master_id
 
-    # device = subtype, если есть, иначе main_category
-    device = req.subtype if req.subtype else req.main_category
+        # сервисный центр через мастера
+        if master.service_center:
+            service_name = master.service_center.service_name
+            service_address = master.service_center.address
+            service_phone = master.service_center.phone
 
-    # данные сервисного центра
-    service_name: Optional[str] = None
-    service_address: Optional[str] = None
-    service_phone: Optional[str] = None
-    if req.service_center:
-        service_name = req.service_center.service_name
-        service_address = req.service_center.address
-        service_phone = req.service_center.phone
+    # устройство: subtype, если есть, иначе main_category
+    device = req.subtype if req.subtype else req.main_category
 
     return PublicRequestOut(
         id=req.id,
@@ -95,7 +93,8 @@ async def get_public_request(
         device=device,
         problem_description=req.problem_description,
         what_was_done=req.what_was_done,
-        total_amount=req.total_amount,
+        # стоимость = работа + запчасти
+        total_amount=(req.total_amount or 0) + (req.parts_cost or 0),
         created_at=req.created_at.isoformat(),
         date_iso=req.date_iso.isoformat() if req.date_iso else None,
         time_slot=req.time_slot,
