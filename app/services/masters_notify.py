@@ -61,8 +61,8 @@ def _build_google_calendar_url(
     phone: Optional[str],
     tz: str = "Europe/Moscow",
 ) -> str:
-    order_part = f"Заявка №{order_no}" if order_no is not None else "Заявка"
-    text_param = order_part.replace(" ", "+")
+    title = f"Заявка №{order_no}" if order_no is not None else "Заявка"
+    text_param = title.replace(" ", "+")
     address_param = (address or "").replace(" ", "+")
     details_str = comment or ""
     if address_details:
@@ -84,16 +84,24 @@ def _build_google_calendar_url(
     if time_slot and "-" in time_slot:
         start_str, end_str = time_slot.split("-", 1)
         try:
-            start_dt = datetime.combine(d.date(), datetime.strptime(start_str, "%H:%M").time())
-            end_dt = datetime.combine(d.date(), datetime.strptime(end_str, "%H:%M").time())
+            start_dt = datetime.combine(
+                d.date(), datetime.strptime(start_str, "%H:%M").time()
+            )
+            end_dt = datetime.combine(
+                d.date(), datetime.strptime(end_str, "%H:%M").time()
+            )
         except ValueError:
             start_dt = d
             end_dt = d + timedelta(hours=1)
     else:
-        start_dt = datetime.combine(d.date(), datetime.strptime("10:00", "%H:%M").time())
+        start_dt = datetime.combine(
+            d.date(), datetime.strptime("10:00", "%H:%M").time()
+        )
         end_dt = start_dt + timedelta(hours=1)
 
-    dates_param = f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
+    dates_param = (
+        f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
+    )
 
     base = "https://www.google.com/calendar/render"
     parts = [
@@ -174,7 +182,7 @@ async def notify_master_request_created(request_id: int) -> None:
 
         yandex_url = _build_yandex_url(req.address)
         google_url = _build_google_calendar_url(
-            order_no=req.id,
+            order_no=display_number,
             date_iso=date_iso_str,
             time_slot=req.time_slot,
             address=req.address,

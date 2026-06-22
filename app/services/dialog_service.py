@@ -73,12 +73,13 @@ TIME_SLOTS = [
     ("17:00", "18:00"),
 ]
 
+
 def _get_panel_login_url(self, user_id: int) -> str:
     """Генерирует ссылку для авторизации в панели по MAX user_id."""
     payload = {
         "sub": str(user_id),
         "exp": datetime.utcnow() + timedelta(hours=24),
-        "type": "max_auto_login"
+        "type": "max_auto_login",
     }
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
     panel_base = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
@@ -107,16 +108,19 @@ class UnifiedDialogService:
 
     async def show_main_menu(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Показывает главное меню для активного пользователя"""
-        
+
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Master).where(Master.max_user_id == user_id)
             )
             master = result.scalar_one_or_none()
-            
+
             if not master:
-                return "❌ Ошибка: пользователь не найден. Пройдите регистрацию заново.", None
-        
+                return (
+                    "❌ Ошибка: пользователь не найден. Пройдите регистрацию заново.",
+                    None,
+                )
+
         # Формируем обращение
         if master.name:
             greeting = f"{master.name} {master.lastname or ''}".strip()
@@ -124,89 +128,99 @@ class UnifiedDialogService:
             greeting = master.service_name
         else:
             greeting = "пользователь"
-        
-        kb = self._inline_keyboard([[
-            {
-                "type": "callback",
-                "text": "📝 Новая заявка",
-                "payload": "menu:new_request",
-                "intent": "default",
-            }
-        ]])
-        
+
+        kb = self._inline_keyboard(
+            [
+                [
+                    {
+                        "type": "callback",
+                        "text": "📝 Новая заявка",
+                        "payload": "menu:new_request",
+                        "intent": "default",
+                    }
+                ]
+            ]
+        )
+
         text = (
             f"👋 Добро пожаловать, {greeting}!\n\n"
             f"Нажмите кнопку или введите /start, чтобы оформить заявку."
         )
-        
+
         return text, kb
-    
+
     async def start_new_request(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Начинает новый диалог создания заявки"""
-        
+
         self.reset(user_id)
         ctx = self._get_ctx(user_id)
         ctx.state = DialogState.ADDRESS_MODE
-        
+
         return self._ask_address_mode()
-    
+
     async def start_or_reset(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Начинает новый диалог или сбрасывает текущий (для webhook)"""
         self.reset(user_id)
-        
+
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Master).where(Master.max_user_id == user_id)
             )
             master = result.scalar_one_or_none()
-        
+
         if not master or master.is_active == 0:
             return await registration_service.start_registration(user_id)
-        
+
         return await self.start_new_request(user_id)
 
     def _ask_address_mode(self) -> Tuple[str, List[dict]]:
         """Спрашивает, где выполнять работу: мастерская или выезд"""
         kb = self._inline_keyboard(
-            [[
-                {
-                    "type": "callback",
-                    "text": "Мастерская",
-                    "payload": "address_mode:workshop",
-                    "intent": "default",
-                },
-                {
-                    "type": "callback",
-                    "text": "Выезд к клиенту",
-                    "payload": "address_mode:enter_address",
-                    "intent": "default",
-                },
-            ]]
+            [
+                [
+                    {
+                        "type": "callback",
+                        "text": "Мастерская",
+                        "payload": "address_mode:workshop",
+                        "intent": "default",
+                    },
+                    {
+                        "type": "callback",
+                        "text": "Выезд к клиенту",
+                        "payload": "address_mode:enter_address",
+                        "intent": "default",
+                    },
+                ]
+            ]
         )
         return "Где будет выполняться работа?", kb
 
     def _buttons_private_house(self) -> List[dict]:
         return self._inline_keyboard(
-            [[
-                {
-                    "type": "callback",
-                    "text": "Частный дом",
-                    "payload": "address_details:private_house",
-                    "intent": "default",
-                }
-            ]]
+            [
+                [
+                    {
+                        "type": "callback",
+                        "text": "Частный дом",
+                        "payload": "address_details:private_house",
+                        "intent": "default",
+                    }
+                ]
+            ]
         )
 
-    async def _get_booked_slots_for_date(self, master_id: int, date_str: str) -> set[str]:
+    async def _get_booked_slots_for_date(
+        self, master_id: int, date_str: str
+    ) -> set[str]:
         """Возвращает множество занятых временных слотов для мастера на указанную дату"""
-        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-        
+        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(ServiceRequest.time_slot).where(
                     ServiceRequest.master_id == master_id,
                     ServiceRequest.date_iso == target_date,
-                    ServiceRequest.status.in_(["new", "in_work", "confirmed"])
+                    ServiceRequest.status.in_(["new", "in_work", "confirmed"]),
                 )
             )
             booked_slots = set()
@@ -248,25 +262,29 @@ class UnifiedDialogService:
 
         rows: List[List[dict]] = []
         if row1:
-            rows.append([
-                {
-                    "type": "callback",
-                    "text": opt["text"],
-                    "payload": opt["payload"],
-                    "intent": "default",
-                }
-                for opt in row1
-            ])
+            rows.append(
+                [
+                    {
+                        "type": "callback",
+                        "text": opt["text"],
+                        "payload": opt["payload"],
+                        "intent": "default",
+                    }
+                    for opt in row1
+                ]
+            )
         if row2:
-            rows.append([
-                {
-                    "type": "callback",
-                    "text": opt["text"],
-                    "payload": opt["payload"],
-                    "intent": "default",
-                }
-                for opt in row2
-            ])
+            rows.append(
+                [
+                    {
+                        "type": "callback",
+                        "text": opt["text"],
+                        "payload": opt["payload"],
+                        "intent": "default",
+                    }
+                    for opt in row2
+                ]
+            )
 
         return self._inline_keyboard(rows)
 
@@ -314,7 +332,6 @@ class UnifiedDialogService:
             return None
         return f"https://yandex.ru/navi?text={address.replace(' ', '+')}"
 
-
     def _build_google_calendar_url(
         self,
         order_no: Optional[int],
@@ -325,8 +342,9 @@ class UnifiedDialogService:
         comment: Optional[str],
         phone: Optional[str],
     ) -> str:
-        order_part = f"Заявка №{order_no}" if order_no is not None else "Заявка"
-        text_param = order_part.replace(" ", "+")
+        # здесь order_no мы будем передавать как master_seq
+        title = f"Заявка №{order_no}" if order_no is not None else "Заявка"
+        text_param = title.replace(" ", "+")
         address_param = (address or "").replace(" ", "+")
         details_str = comment or ""
         if address_details:
@@ -335,7 +353,9 @@ class UnifiedDialogService:
             if details_str:
                 details_str += ". "
             # Для Google Календаря заменяем +7 на 8, так как он режет плюсы
-            phone_display = phone.replace("+7", "8", 1) if phone.startswith("+7") else phone
+            phone_display = (
+                phone.replace("+7", "8", 1) if phone.startswith("+7") else phone
+            )
             details_str += f"Телефон: {phone_display}"
         details_param = details_str.replace(" ", "+")
 
@@ -350,16 +370,24 @@ class UnifiedDialogService:
         if time_slot and "-" in time_slot:
             start_str, end_str = time_slot.split("-", 1)
             try:
-                start_dt = datetime.combine(d.date(), datetime.strptime(start_str, "%H:%M").time())
-                end_dt = datetime.combine(d.date(), datetime.strptime(end_str, "%H:%M").time())
+                start_dt = datetime.combine(
+                    d.date(), datetime.strptime(start_str, "%H:%M").time()
+                )
+                end_dt = datetime.combine(
+                    d.date(), datetime.strptime(end_str, "%H:%M").time()
+                )
             except ValueError:
                 start_dt = d
                 end_dt = d + timedelta(hours=1)
         else:
-            start_dt = datetime.combine(d.date(), datetime.strptime("10:00", "%H:%M").time())
+            start_dt = datetime.combine(
+                d.date(), datetime.strptime("10:00", "%H:%M").time()
+            )
             end_dt = start_dt + timedelta(hours=1)
 
-        dates_param = f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
+        dates_param = (
+            f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
+        )
 
         base = "https://www.google.com/calendar/render"
         parts = [
@@ -373,50 +401,60 @@ class UnifiedDialogService:
 
     def _ask_name(self) -> Tuple[str, List[dict]]:
         """Запрашивает имя клиента с кнопкой 'Неизвестно'."""
-        kb = self._inline_keyboard([[
-            {
-                "type": "callback",
-                "text": "❓ Неизвестно / Без имени",
-                "payload": "name:unknown",
-                "intent": "default",
-            }
-        ]])
+        kb = self._inline_keyboard(
+            [
+                [
+                    {
+                        "type": "callback",
+                        "text": "❓ Неизвестно / Без имени",
+                        "payload": "name:unknown",
+                        "intent": "default",
+                    }
+                ]
+            ]
+        )
         return "👤 Введи имя контактного лица:", kb
 
-    async def handle_callback(self, user_id: int, payload: str) -> Tuple[str, Optional[List[dict]]]:
+    async def handle_callback(
+        self, user_id: int, payload: str
+    ) -> Tuple[str, Optional[List[dict]]]:
         """Обработка callback-запросов"""
-        
+
         print(f"🔔 handle_callback: user_id={user_id}, payload={payload}")
-        
+
         # Callback от регистрации
         if payload == "registration:start" or payload.startswith("role:"):
             return await registration_service.handle_callback(user_id, payload)
-        
+
         # Кнопка "Новая заявка"
         if payload == "menu:new_request":
             async with AsyncSessionLocal() as session:
                 result = await session.execute(
-                    select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
+                    select(Master).where(
+                        Master.max_user_id == user_id, Master.is_active == 1
+                    )
                 )
                 master = result.scalar_one_or_none()
-            
+
             if not master:
                 return await registration_service.start_registration(user_id)
-            
+
             return await self.start_new_request(user_id)
-        
+
         # Проверяем, зарегистрирован ли пользователь
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
+                select(Master).where(
+                    Master.max_user_id == user_id, Master.is_active == 1
+                )
             )
             master = result.scalar_one_or_none()
-        
+
         if not master:
             return await registration_service.start_registration(user_id)
-        
+
         ctx = self._get_ctx(user_id)
-        
+
         # Выбор места работы
         if payload == "address_mode:workshop" and ctx.state == DialogState.ADDRESS_MODE:
             ctx.address = "Мастерская"
@@ -428,11 +466,17 @@ class UnifiedDialogService:
                 None,
             )
 
-        if payload == "address_mode:enter_address" and ctx.state == DialogState.ADDRESS_MODE:
+        if (
+            payload == "address_mode:enter_address"
+            and ctx.state == DialogState.ADDRESS_MODE
+        ):
             ctx.state = DialogState.ADDRESS
             return "Введи полный адрес (город, улица, дом):", None
 
-        if payload == "address_details:private_house" and ctx.state == DialogState.ADDRESS_DETAILS:
+        if (
+            payload == "address_details:private_house"
+            and ctx.state == DialogState.ADDRESS_DETAILS
+        ):
             ctx.address_details = None
             ctx.state = DialogState.DESCRIPTION
             return "✅ Адрес сохранен. Опиши поломку со слов клиента:", None
@@ -444,21 +488,21 @@ class UnifiedDialogService:
             ctx.date = self._format_pretty_date(date_str)
             ctx.slot = None
             ctx.state = DialogState.SLOT_TIME
-            
+
             async with AsyncSessionLocal() as session:
                 result = await session.execute(
                     select(Master).where(Master.max_user_id == user_id)
                 )
                 master = result.scalar_one_or_none()
                 master_id = master.id if master else None
-            
+
             # Проверяем, есть ли хоть один свободный слот на выбранную дату
             if not await self._has_any_free_slot(master_id, date_str):
                 return (
                     f"❌ На {ctx.date} нет свободных временных слотов.\nВыберите другую дату:",
-                    self._buttons_slot_dates()
+                    self._buttons_slot_dates(),
                 )
-            
+
             return (
                 f"Выбери доступное время для {ctx.date}:",
                 await self._buttons_time_slots(master_id, date_str),
@@ -480,7 +524,7 @@ class UnifiedDialogService:
                 )
                 master = result.scalar_one_or_none()
                 master_id = master.id if master else None
-            
+
             booked = await self._get_booked_slots_for_date(master_id, date_part)
             payload_full = f"slot_time:{date_part}:{time_part}"
             if payload_full in booked:
@@ -506,19 +550,21 @@ class UnifiedDialogService:
 
     async def handle_message(self, user_id: int, text: str) -> Tuple[str, Optional[List[dict]]]:
         """Обработка текстовых сообщений"""
-        
+
         if registration_service.is_in_registration(user_id):
             return await registration_service.handle_message(user_id, text)
-        
+
         async with AsyncSessionLocal() as session:
             result = await session.execute(
-                select(Master).where(Master.max_user_id == user_id, Master.is_active == 1)
+                select(Master).where(
+                    Master.max_user_id == user_id, Master.is_active == 1
+                )
             )
             master = result.scalar_one_or_none()
-        
+
         if not master:
             return await registration_service.start_registration(user_id)
-        
+
         ctx = self._get_ctx(user_id)
         text_clean = text.strip()
         text_lower = text_clean.lower()
@@ -557,7 +603,10 @@ class UnifiedDialogService:
             else:
                 ctx.address_details = text_clean
             ctx.state = DialogState.DESCRIPTION
-            return "✅ Частный дом.\nНапиши причину бращения со слов клиента:", None
+            return (
+                "✅ Частный дом.\nНапиши причину бращения со слов клиента:",
+                None,
+            )
 
         # Ввод описания
         if ctx.state == DialogState.DESCRIPTION:
@@ -566,7 +615,7 @@ class UnifiedDialogService:
             return (
                 "✅ Принял описание. Выбери подходящую дату\n"
                 "Если подходящей даты нет в списке, введи её в формате ДД.ММ.ГГ (например, 31.12.24):",
-                self._buttons_slot_dates()
+                self._buttons_slot_dates(),
             )
 
         # Обработка ручного ввода даты
@@ -588,40 +637,29 @@ class UnifiedDialogService:
                 if not await self._has_any_free_slot(master_id, iso_date):
                     return (
                         f"❌ На {ctx.date} нет свободных временных слотов.\nПожалуйста, выберите другую дату:",
-                        self._buttons_slot_dates()
+                        self._buttons_slot_dates(),
                     )
 
                 return (
                     f"Выбери удобное время для {ctx.date}:",
-                    await self._buttons_time_slots(master_id, iso_date)
+                    await self._buttons_time_slots(master_id, iso_date),
                 )
             else:
                 return (
                     "Не удалось распознать дату. Используйте формат ДД.ММ.ГГ или ДД.ММ.ГГГГ.\n"
                     "Например: 31.12.24 или 31.12.2024",
-                    self._buttons_slot_dates()
+                    self._buttons_slot_dates(),
                 )
 
         if ctx.state == DialogState.SLOT_TIME:
             # Если пользователь вводит время текстом (не через кнопки), просим выбрать из кнопок
             return (
                 "Пожалуйста, выберите время из кнопок ниже:",
-                await self._buttons_time_slots(master_id, ctx.date_iso)
+                await self._buttons_time_slots(master_id, ctx.date_iso),
             )
-
-            # Если пользователь сам ввел дату/время текстом (не через кнопки)
-            # В текущей логике даты выбираются только кнопками, но оставим на всякий случай
-            if ctx.state in (DialogState.SLOT, DialogState.SLOT_TIME):
-                # Пытаемся распознать дату...
-                ctx.date_iso = None
-                ctx.date = None
-                ctx.slot = text_clean
-                ctx.state = DialogState.NAME
-                return self._ask_name()
 
         # Ввод имени
         if ctx.state == DialogState.NAME:
-            # Если пришёл обычный текст (не callback)
             ctx.name = text_clean if text_clean.strip() else "Без имени"
             ctx.state = DialogState.PHONE
             return "☎️ Введи номер контактного лица.", None
@@ -646,7 +684,10 @@ class UnifiedDialogService:
                 master_obj = result.scalar_one_or_none()
 
                 if not master_obj:
-                    return "❌ Ошибка: мастер не найден. Пройдите регистрацию заново.", None
+                    return (
+                        "❌ Ошибка: мастер не найден. Пройдите регистрацию заново.",
+                        None,
+                    )
 
                 master_id = master_obj.id
 
@@ -658,8 +699,12 @@ class UnifiedDialogService:
                     "client_phone": ctx.phone,
                     "service_title": "Заявка",
                     "problem_description": ctx.description,
-                    "location_type": "workshop" if ctx.address == "Мастерская" else "client_address",
-                    "address": "Мастерская" if ctx.address == "Мастерская" else ctx.address,
+                    "location_type": "workshop"
+                    if ctx.address == "Мастерская"
+                    else "client_address",
+                    "address": "Мастерская"
+                    if ctx.address == "Мастерская"
+                    else ctx.address,
                     "address_details": ctx.address_details,
                     "date_iso": ctx.date_iso,
                     "time_slot": ctx.slot,
@@ -670,7 +715,7 @@ class UnifiedDialogService:
                     "payment_status": "unpaid",
                     "meta": None,
                     "master_id": master_id,
-                    "assigned_master_id": master_id,   # создатель = исполнитель
+                    "assigned_master_id": master_id,  # создатель = исполнитель
                 }
 
                 req = await create_service_request(session, data)
@@ -682,8 +727,10 @@ class UnifiedDialogService:
             # ====== 1. Ряд: Добавить в календарь ======
             row1 = []
             date_iso_str = ctx.date_iso if ctx.date_iso else None
+
+            # В календарь передаём именно мастерский номер
             google_cal_url = _build_google_calendar_url(
-                order_no=req.id,
+                order_no=req.master_seq if req.master_seq is not None else None,
                 date_iso=date_iso_str,
                 time_slot=ctx.slot,
                 address=ctx.address,
@@ -692,52 +739,65 @@ class UnifiedDialogService:
                 phone=ctx.phone,
             )
             if google_cal_url:
-                row1.append({
-                    "type": "link",
-                    "text": "📅 Добавить в календарь",
-                    "url": google_cal_url,
-                })
+                row1.append(
+                    {
+                        "type": "link",
+                        "text": "📅 Добавить в календарь",
+                        "url": google_cal_url,
+                    }
+                )
             else:
-                # Если ссылка не сформирована (нет данных), можно показать заглушку или пропустить ряд
-                row1.append({
-                    "type": "callback",
-                    "text": "❌ Нет данных для календаря",
-                    "payload": "noop",
-                })
+                row1.append(
+                    {
+                        "type": "callback",
+                        "text": "❌ Нет данных для календаря",
+                        "payload": "noop",
+                    }
+                )
 
             # ====== 2. Ряд: Открыть в боте и Открыть в CRM ======
             row2 = []
 
-            # Кнопка "Открыть в боте" (ссылка на ордер-бота)
-            order_bot_url = os.getenv("MAX_ORDER_BOT_LINK", "")            
-            row2.append({
-                "type": "link",
-                "text": "📋 Открыть заявки",
-                "url": order_bot_url,
-            })
+            order_bot_url = os.getenv("MAX_ORDER_BOT_LINK", "")
+            row2.append(
+                {
+                    "type": "link",
+                    "text": "📋 Открыть заявки",
+                    "url": order_bot_url,
+                }
+            )
 
-            # Кнопка "Открыть в CRM"
             panel_base = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
             view_request_url = f"{panel_base}/requests/{req.id}"
-            row2.append({
-                "type": "link",
-                "text": "🌐 Перейти в CRM",
-                "url": view_request_url,
-            })
+            row2.append(
+                {
+                    "type": "link",
+                    "text": "🌐 Перейти в CRM",
+                    "url": view_request_url,
+                }
+            )
 
             # ====== 3. Ряд: Создать новую заявку ======
-            row3 = [{
-                "type": "callback",
-                "text": "📝 Новая заявка",
-                "payload": "menu:new_request",
-                "intent": "default",
-            }]
+            row3 = [
+                {
+                    "type": "callback",
+                    "text": "📝 Новая заявка",
+                    "payload": "menu:new_request",
+                    "intent": "default",
+                }
+            ]
 
-            # Формируем клавиатуру из трёх рядов
             kb = self._inline_keyboard([row1, row2, row3])
 
-            display_number = req.master_seq if req.master_seq is not None else req.id
-            reply = f"✅ Заявка №{display_number} успешно создана! Выберите действие:"
+            # Мастеру показываем только master_seq
+            if req.master_seq is not None:
+                display_number = req.master_seq
+                reply = (
+                    f"✅ Заявка №{display_number} успешно создана! Выберите действие:"
+                )
+            else:
+                reply = "✅ Заявка успешно создана! Выберите действие:"
+
             self.reset(user_id)
             return reply, kb
 
@@ -746,21 +806,25 @@ class UnifiedDialogService:
     async def cancel_request(self, user_id: int) -> Tuple[str, Optional[List[dict]]]:
         """Отменяет текущую заявку и предлагает создать новую"""
         self.reset(user_id)
-        
-        kb = self._inline_keyboard([[
-            {
-                "type": "callback",
-                "text": "Создать новую заявку",
-                "payload": "menu:new_request",
-                "intent": "default",
-            }
-        ]])
-        
+
+        kb = self._inline_keyboard(
+            [
+                [
+                    {
+                        "type": "callback",
+                        "text": "Создать новую заявку",
+                        "payload": "menu:new_request",
+                        "intent": "default",
+                    }
+                ]
+            ]
+        )
+
         text = (
             "❌ Заявка отменена.\n\n"
             "Вы можете создать новую заявку, нажав на кнопку ниже."
         )
-        
+
         return text, kb
 
 
