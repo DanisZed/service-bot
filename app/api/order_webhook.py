@@ -60,7 +60,6 @@ async def handle_callback(
     payload: str
 ) -> None:
     if payload.startswith("sticker:"):
-        # Защита от дублирования
         if callback_id in _processing_callbacks:
             logger.warning(f"Callback {callback_id} already processing, skipping duplicate")
             return
@@ -68,27 +67,30 @@ async def handle_callback(
         try:
             client = MaxOrderBotClient()
             try:
-                # 1. Мгновенно отвечаем на callback – кнопка перестаёт "крутиться"
                 await client.answer_callback(
                     callback_id=callback_id,
                     notification="⏳ Генерация гарантийного талона..."
                 )
-                # 2. Генерируем PDF (это может занять 1–2 секунды)
                 request_id = int(payload.split(":", 1)[1])
+                # Загружаем заявку, чтобы получить master_seq
+                async with AsyncSessionLocal() as session:
+                    from app.db.models import ServiceRequest
+                    req = await session.get(ServiceRequest, request_id)
+                    if not req:
+                        raise ValueError("Заявка не найдена")
+                    display_number = req.master_seq if req.master_seq is not None else req.id
                 frontend_base = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
-                logger.info(f"Generating sticker for request {request_id}, callback {callback_id}")
+                logger.info(f"Generating sticker for request {request_id}, display number {display_number}, callback {callback_id}")
                 pdf_bytes = await generate_sticker_for_request(request_id, frontend_base)
-                # 3. Отправляем файл
                 await client.send_file(
                     user_id=user_id,
                     file_bytes=pdf_bytes,
-                    filename=f"sticker_{request_id}.pdf",
-                    caption=f"🖨️ Гарантийный талон №{request_id}",
+                    filename=f"sticker_{display_number}.pdf",
+                    caption=f"🖨️ Гарантийный талон №{display_number}",
                 )
-                logger.info(f"Sticker for request {request_id} sent successfully")
+                logger.info(f"Sticker for request {request_id} (display {display_number}) sent successfully")
             except Exception as e:
                 logger.error(f"Ошибка генерации/отправки наклейки: {e}")
-                # Показываем ошибку в уведомлении (только если ещё не отвечали)
                 try:
                     await client.answer_callback(
                         callback_id=callback_id,
@@ -99,10 +101,8 @@ async def handle_callback(
             finally:
                 await client.close()
         finally:
-            # Убираем ID из сета после обработки
             _processing_callbacks.discard(callback_id)
         return
-
 
 @router.post("/order/webhook")
 async def order_webhook(request: Request, background_tasks: BackgroundTasks) -> Dict[str, Any]:

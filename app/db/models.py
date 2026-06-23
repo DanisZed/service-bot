@@ -173,6 +173,25 @@ class Master(Base):
         cascade="all, delete-orphan"
     )
 
+    social_links = relationship(
+        "MasterSocialLink",
+        back_populates="master",
+        cascade="all, delete-orphan"
+    )
+
+class MasterSocialLink(Base):
+    __tablename__ = "master_social_link"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), nullable=False)
+
+    type = Column(String(32), nullable=False)  # 'instagram', 'vk', 'telegram', 'site', ...
+    url = Column(Text, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    master = relationship("Master", back_populates="social_links")
+
 
 class TimeSlotBooking(Base):
     __tablename__ = "time_slot_booking"
