@@ -81,13 +81,12 @@ async def test_webpush(
     db: AsyncSession = Depends(get_db),
     current_master: Master = Depends(get_current_master),
 ):
-    # Берём последнюю подписку этого мастера
     result = await db.execute(
-      select(WebPushSubscription)
-      .where(WebPushSubscription.master_id == current_master.id)
-      .order_by(WebPushSubscription.created_at.desc())
+        select(WebPushSubscription)
+        .where(WebPushSubscription.master_id == current_master.id)
+        .order_by(WebPushSubscription.created_at.desc())
     )
-    sub: WebPushSubscription | None = result.scalar_one_or_none()
+    sub: WebPushSubscription | None = result.scalars().first()
 
     if not sub:
         raise HTTPException(status_code=404, detail="No subscription")
