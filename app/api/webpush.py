@@ -72,3 +72,36 @@ async def subscribe_webpush(
 
     await db.commit()
     return {"status": "ok"}
+
+    from fastapi import HTTPException
+from app.services.webpush_sender import send_webpush
+
+@router.post("/test")
+async def test_webpush(
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    # Берём последнюю подписку этого мастера
+    result = await db.execute(
+      select(WebPushSubscription)
+      .where(WebPushSubscription.master_id == current_master.id)
+      .order_by(WebPushSubscription.created_at.desc())
+    )
+    sub: WebPushSubscription | None = result.scalar_one_or_none()
+
+    if not sub:
+        raise HTTPException(status_code=404, detail="No subscription")
+
+    ok = send_webpush(
+        sub,
+        {
+            "title": "РБТ CRM",
+            "body": "Тестовое уведомление для мастера",
+            "data": {"type": "test"},
+        },
+    )
+
+    if not ok:
+        raise HTTPException(status_code=500, detail="Push send failed")
+
+    return {"status": "sent"}
