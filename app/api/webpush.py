@@ -94,8 +94,8 @@ async def test_webpush(
     ok = send_webpush(
         sub,
         {
-            "title": "РБТ CRM",
-            "body": "Тестовое уведомление для мастера",
+            "title": "Напоминание",
+            "body": "На сегодня у вас 3 заявки. Не забудьте проверить календарь",
             "data": {"type": "test"},
         },
     )
