@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.db.models import (
     Master,
@@ -67,6 +68,11 @@ async def process_visit_reminders() -> None:
     async with AsyncSessionLocal() as session:
         stmt = (
             select(Notification)
+            .options(
+                selectinload(Notification.master),
+                selectinload(Notification.request),
+            )
+
             .where(
                 Notification.channel == "webpush",
                 Notification.type == "visit_reminder",
