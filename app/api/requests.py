@@ -18,6 +18,7 @@ from app.api.deps import get_current_master, get_db
 from app.services.masters_notify import notify_master_request_created
 from app.services.requests import create_service_request
 from app.services.sticker_generator import generate_sticker_for_request
+from app.services.notifications import schedule_visit_reminders
 
 
 router = APIRouter(prefix="/api/requests", tags=["requests"])
