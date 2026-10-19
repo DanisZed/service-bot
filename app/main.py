@@ -22,8 +22,9 @@ from app.api.health import router as health_router
 from app.api.webpush import router as webpush_router
 from app.api import service_center as service_center_router
 from app.api import public
+from app.api.max_miniapp import router as max_miniapp_router
 
-PANEL_BASE_URL = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+PANEL_BASE_URL = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
 
 # Загружаем .env
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -67,3 +68,4 @@ app.include_router(health_router)
 app.include_router(webpush_router)
 app.include_router(service_center_router.router)
 app.include_router(public.router)
+app.include_router(max_miniapp_router)

@@ -1,23 +1,70 @@
-# scripts/send_visit_reminders.py
 import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from app.db.models import (
+    Master,
+    Notification,
+    ServiceRequest,
+    WebPushSubscription,
+)
 from app.db.session import AsyncSessionLocal
-from app.db.models import Notification, WebPushSubscription, ServiceRequest, Master
+from app.services.masters_notify import notify_master_request_created
 from app.services.webpush_sender import send_webpush
 
 
-def utcnow():
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def process_visit_reminders():
+def build_push_payload(request: ServiceRequest | None) -> dict:
+    """
+    Формирует короткий текст для нативного Web Push.
+    Полная карточка заявки уходит через второго MAX-бота.
+    """
+    if not request:
+        return {
+            "title": "⏰ Напоминание о визите",
+            "body": "До запланированного события остался примерно 1 час",
+            "data": {
+                "type": "visit_reminder",
+                "url": "/app/mobile-requests",
+            },
+        }
+
+    display_number = (
+        request.master_seq
+        if request.master_seq is not None
+        else request.id
+    )
+
+    parts = [f"Заявка №{display_number}"]
+
+    if request.client_name:
+        parts.append(request.client_name)
+
+    if request.address:
+        parts.append(f"📍 {request.address}")
+
+    if request.time_slot:
+        parts.append(f"⏰ {request.time_slot}")
+
+    return {
+        "title": "⏰ Выезд через 1 час",
+        "body": " · ".join(parts),
+        "data": {
+            "type": "visit_reminder",
+            "request_id": request.id,
+            "url": f"/app/mobile-requests?request_id={request.id}",
+        },
+    }
+
+
+async def process_visit_reminders() -> None:
     now = utcnow()
 
     async with AsyncSessionLocal() as session:
-        # 1. Берём все уведомления, которые пора отправить
         stmt = (
             select(Notification)
             .where(
@@ -31,17 +78,53 @@ async def process_visit_reminders():
         result = await session.execute(stmt)
         notifications = result.scalars().unique().all()
 
-        print(f"[send_visit_reminders] found {len(notifications)} notifications to send")
+        print(
+            "[send_visit_reminders] "
+            f"found {len(notifications)} notifications to send"
+        )
 
         for notif in notifications:
-            master: Master = notif.master
-            request: ServiceRequest = notif.request
+            master: Master | None = notif.master
+            request: ServiceRequest | None = notif.request
 
             if not master:
-                print(f"[send_visit_reminders] notification {notif.id} has no master, skip")
+                print(
+                    "[send_visit_reminders] "
+                    f"notification {notif.id} has no master, skip"
+                )
                 continue
 
-            # 2. Подписки мастера
+            if not request:
+                print(
+                    "[send_visit_reminders] "
+                    f"notification {notif.id} has no request, skip"
+                )
+                continue
+
+            # 1. Всегда пытаемся отправить полную карточку во второй MAX-бот.
+            max_ok = False
+
+            try:
+                max_ok = await notify_master_request_created(
+                    request.id,
+                    is_reminder=True,
+                )
+
+                print(
+                    "[send_visit_reminders] "
+                    f"MAX reminder for notification {notif.id}: "
+                    f"{'sent' if max_ok else 'failed'}"
+                )
+
+            except Exception as exc:
+                print(
+                    "[send_visit_reminders] "
+                    f"MAX reminder error for notification {notif.id}: {exc}"
+                )
+
+            # 2. Отправляем Web Push на все подписанные устройства мастера.
+            webpush_ok = False
+
             subs_stmt = select(WebPushSubscription).where(
                 WebPushSubscription.master_id == master.id
             )
@@ -50,59 +133,55 @@ async def process_visit_reminders():
 
             if not subscriptions:
                 print(
-                    f"[send_visit_reminders] master {master.id} has no webpush subscriptions"
+                    "[send_visit_reminders] "
+                    f"master {master.id} has no webpush subscriptions"
                 )
-                continue
-
-            # 3. Формируем payload
-            title = "Напоминание о выезде"
-            parts = []
-
-            if request:
-                parts.append(f"Заявка №{request.id}")
-                if request.address:
-                    parts.append(f"Адрес: {request.address}")
-                if request.datetime_from and request.datetime_to:
-                    parts.append(
-                        f"Окно: {request.datetime_from} — {request.datetime_to}"
-                    )
-                elif request.date_iso and request.time_slot:
-                    parts.append(
-                        f"Дата: {request.date_iso}, слот: {request.time_slot}"
-                    )
             else:
-                parts.append("Напоминание о визите")
+                payload = build_push_payload(request)
 
-            body = " | ".join(parts)
+                for sub in subscriptions:
+                    try:
+                        ok = send_webpush(sub, payload)
 
-            payload = {
-                "title": title,
-                "body": body,
-                "url": "/app/mobile-requests",
-            }
+                        if ok:
+                            webpush_ok = True
+                        else:
+                            print(
+                                "[send_visit_reminders] "
+                                f"failed to send push to subscription {sub.id}, "
+                                f"master {master.id}"
+                            )
 
-            any_ok = False
+                    except Exception as exc:
+                        print(
+                            "[send_visit_reminders] "
+                            f"webpush error for subscription {sub.id}, "
+                            f"master {master.id}: {exc}"
+                        )
 
-            for sub in subscriptions:
-                ok = send_webpush(sub, payload)
-                if ok:
-                    any_ok = True
-                else:
-                    # Здесь при желании можно удалять мёртвые подписки (410)
-                    print(
-                        f"[send_visit_reminders] failed to send to sub {sub.id}, master {master.id}"
-                    )
-
-            if any_ok:
+            # 3. Не даём cron слать дубли.
+            # Считаем доставленным, если прошёл хотя бы один канал.
+            if max_ok or webpush_ok:
                 notif.sent_at = now
-                print(f"[send_visit_reminders] notification {notif.id} marked as sent")
+
+                print(
+                    "[send_visit_reminders] "
+                    f"notification {notif.id} marked as sent "
+                    f"(max={max_ok}, webpush={webpush_ok})"
+                )
+            else:
+                print(
+                    "[send_visit_reminders] "
+                    f"notification {notif.id} not sent via any channel; "
+                    "will retry on the next cron run"
+                )
 
         await session.commit()
 
     print("[send_visit_reminders] done")
 
 
-def main():
+def main() -> None:
     asyncio.run(process_visit_reminders())
 
 

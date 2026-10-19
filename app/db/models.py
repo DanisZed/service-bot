@@ -56,6 +56,8 @@ class ServiceRequest(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
+    visit_reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
+
     master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
     assigned_master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
     master_seq = Column(Integer, nullable=True)

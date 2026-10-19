@@ -1,19 +1,18 @@
-# app/services/masters_notify.py
-import os
-from typing import List, Optional
-from datetime import datetime, timedelta
-
 import logging
+import os
+from datetime import datetime, timedelta
+from typing import List, Optional
 
+from app.db.models import Master, ServiceRequest
 from app.db.session import AsyncSessionLocal
-from app.db.models import ServiceRequest, Master
 from max_client import MaxClient
+
 
 logger = logging.getLogger(__name__)
 
 MAX_ORDER_BOT_TOKEN = os.getenv("MAX_ORDER_BOT_TOKEN")
 
-# Словарь (можно вынести в начало файла или импортировать)
+
 SUBTYPE_NAMES = {
     # Крупная бытовая техника
     "washing_machine": "Стиральные машины",
@@ -48,6 +47,7 @@ SUBTYPE_NAMES = {
 def _build_yandex_url(address: Optional[str]) -> Optional[str]:
     if not address or address == "Мастерская":
         return None
+
     return f"https://yandex.ru/navi?text={address.replace(' ', '+')}"
 
 
@@ -64,14 +64,14 @@ def _build_google_calendar_url(
     text_param = title.replace(" ", "+")
     address_param = (address or "").replace(" ", "+")
 
-    # Описание
     details_str = comment or ""
+
     if address_details:
         details_str += f" ({address_details})"
 
-    # Телефон в формате 8XXXXXXXXXX
     if phone:
         raw = "".join(ch for ch in phone if ch.isdigit())
+
         if raw.startswith("7") and len(raw) == 11:
             phone_display = "8" + raw[1:]
         elif raw.startswith("8") and len(raw) == 11:
@@ -80,45 +80,51 @@ def _build_google_calendar_url(
             phone_display = "8" + raw
         else:
             phone_display = raw
+
         if details_str:
             details_str += ". "
+
         details_str += f"Телефон: {phone_display}"
 
-    # ВАЖНО: создаём details_param, которой не хватало
     details_param = details_str.replace(" ", "+")
 
-    # Дата / время
     if date_iso:
         try:
-            d = datetime.strptime(date_iso, "%Y-%m-%d")
+            date_value = datetime.strptime(date_iso, "%Y-%m-%d")
         except ValueError:
-            d = datetime.now()
+            date_value = datetime.now()
     else:
-        d = datetime.now()
+        date_value = datetime.now()
 
     if time_slot and "-" in time_slot:
         start_str, end_str = time_slot.split("-", 1)
+
         try:
             start_dt = datetime.combine(
-                d.date(), datetime.strptime(start_str, "%H:%M").time()
+                date_value.date(),
+                datetime.strptime(start_str.strip(), "%H:%M").time(),
             )
             end_dt = datetime.combine(
-                d.date(), datetime.strptime(end_str, "%H:%M").time()
+                date_value.date(),
+                datetime.strptime(end_str.strip(), "%H:%M").time(),
             )
         except ValueError:
-            start_dt = d
-            end_dt = d + timedelta(hours=1)
+            start_dt = date_value
+            end_dt = date_value + timedelta(hours=1)
     else:
         start_dt = datetime.combine(
-            d.date(), datetime.strptime("10:00", "%H:%M").time()
+            date_value.date(),
+            datetime.strptime("10:00", "%H:%M").time(),
         )
         end_dt = start_dt + timedelta(hours=1)
 
     dates_param = (
-        f"{start_dt.strftime('%Y%m%dT%H%M00')}/{end_dt.strftime('%Y%m%dT%H%M00')}"
+        f"{start_dt.strftime('%Y%m%dT%H%M00')}/"
+        f"{end_dt.strftime('%Y%m%dT%H%M00')}"
     )
 
     base = "https://www.google.com/calendar/render"
+
     parts = [
         "action=TEMPLATE",
         f"text={text_param}",
@@ -126,38 +132,88 @@ def _build_google_calendar_url(
         f"details={details_param}",
         f"location={address_param}",
     ]
+
     return base + "?" + "&".join(parts)
 
 
-async def notify_master_request_created(request_id: int) -> None:
+def _request_date_iso(req: ServiceRequest) -> Optional[str]:
+    if isinstance(req.date_iso, datetime):
+        return req.date_iso.date().isoformat()
+
+    if hasattr(req.date_iso, "isoformat"):
+        return req.date_iso.isoformat()
+
+    return str(req.date_iso) if req.date_iso else None
+
+
+async def notify_master_request_created(
+    request_id: int,
+    *,
+    is_reminder: bool = False,
+) -> bool:
     """
-    Уведомляет назначенного мастера (или владельца, если назначенного нет) о заявке.
+    Отправляет карточку назначенному мастеру через второго MAX-бота.
+
+    is_reminder=False: обычная новая заявка.
+    is_reminder=True: напоминание о выезде примерно через один час.
     """
-    logger.info(f"notify_master_request_created: request_id={request_id}")
+    logger.info(
+        "notify_master_request_created: request_id=%s, is_reminder=%s",
+        request_id,
+        is_reminder,
+    )
+
+    if not MAX_ORDER_BOT_TOKEN:
+        logger.error("MAX_ORDER_BOT_TOKEN is not configured")
+        return False
 
     async with AsyncSessionLocal() as session:
         req = await session.get(ServiceRequest, request_id)
-        if not req:
-            logger.warning(f"notify_master_request_created: request {request_id} not found")
-            return
 
-        # Кому отправлять: назначенный мастер или владелец
+        if not req:
+            logger.warning(
+                "notify_master_request_created: request %s not found",
+                request_id,
+            )
+            return False
+
         target_master_id = req.assigned_master_id or req.master_id
+
         if not target_master_id:
-            logger.warning(f"notify_master_request_created: no target master for request {request_id}")
-            return
+            logger.warning(
+                "notify_master_request_created: no target master for request %s",
+                request_id,
+            )
+            return False
 
         master = await session.get(Master, target_master_id)
+
         if not master or not master.max_user_id:
-            logger.warning(f"notify_master_request_created: master {target_master_id} not found or no max_user_id")
-            return
+            logger.warning(
+                "notify_master_request_created: master %s not found "
+                "or has no max_user_id",
+                target_master_id,
+            )
+            return False
 
-        # Формирование текста сообщения (без изменений)
-        display_number = req.master_seq if req.master_seq is not None else req.id
-        lines: List[str] = [f"📝 ЗАЯВКА № {display_number}\n"]
+        display_number = (
+            req.master_seq
+            if req.master_seq is not None
+            else req.id
+        )
 
-        # if req.service_title or req.subtype:            
-        #    lines.append(f"🔧 Вид техники: {SUBTYPE_NAMES.get(req.subtype, req.subtype)}")
+        lines: List[str] = []
+
+        if is_reminder:
+            lines.extend(
+                [
+                    "⏰ НАПОМИНАНИЕ",
+                    "До выезда по заявке остался примерно 1 час.",
+                    "",
+                ]
+            )
+
+        lines.append(f"📝 ЗАЯВКА № {display_number}")
 
         if req.problem_description:
             lines.append(f"📄 Причина обращения: {req.problem_description}")
@@ -172,29 +228,28 @@ async def notify_master_request_created(request_id: int) -> None:
         if req.address_details:
             lines.append(f"❗️ Уточнение по адресу: {req.address_details}")
 
-        date_iso_str: Optional[str] = None
+        date_iso_str = _request_date_iso(req)
+
         if isinstance(req.date_iso, datetime):
             lines.append(f"📅 Дата: {req.date_iso.strftime('%d.%m.%Y')}")
-            date_iso_str = req.date_iso.date().isoformat()
-        elif hasattr(req.date_iso, "isoformat"):
+        elif hasattr(req.date_iso, "strftime"):
             lines.append(f"📅 Дата: {req.date_iso.strftime('%d.%m.%Y')}")
-            date_iso_str = req.date_iso.isoformat()
-        else:
-            date_iso_str = str(req.date_iso) if req.date_iso else None
-            if req.date_iso:
-                lines.append(f"📅 Дата: {date_iso_str}")
+        elif req.date_iso:
+            lines.append(f"📅 Дата: {req.date_iso}")
 
         if req.time_slot:
             lines.append(f"⏰ Время: {req.time_slot}")
 
         if req.client_name:
             lines.append(f"🙋‍♂️ Клиент: {req.client_name}")
+
         if req.client_phone:
             lines.append(f"📞 Телефон: {req.client_phone}")
 
         text = "\n".join(lines)
 
         yandex_url = _build_yandex_url(req.address)
+
         google_url = _build_google_calendar_url(
             order_no=display_number,
             date_iso=date_iso_str,
@@ -206,21 +261,79 @@ async def notify_master_request_created(request_id: int) -> None:
         )
 
         buttons_rows: List[List[dict]] = []
-        if yandex_url:
-            buttons_rows.append([{"type": "link", "text": "🚘 Открыть Яндекс.Навигатор", "url": yandex_url}])
-        if google_url:
-            buttons_rows.append([{"type": "link", "text": "📅 Добавить в Google Календарь", "url": google_url}])
-        # ... после добавления yandex_url и google_url ...
-        buttons_rows.append([{"type": "callback", "text": "🖨️ Гарантийный талон", "payload": f"sticker:{req.id}"}])
-        attachments = None
-        if buttons_rows:
-            attachments = [{"type": "inline_keyboard", "payload": {"buttons": buttons_rows}}]
 
-        logger.info(f"notify_master_request_created: sending to master {master.max_user_id}")
+        if yandex_url:
+            buttons_rows.append(
+                [
+                    {
+                        "type": "link",
+                        "text": "🚘 Открыть Яндекс.Навигатор",
+                        "url": yandex_url,
+                    }
+                ]
+            )
+
+        if google_url:
+            buttons_rows.append(
+                [
+                    {
+                        "type": "link",
+                        "text": "📅 Добавить в Google Календарь",
+                        "url": google_url,
+                    }
+                ]
+            )
+
+        buttons_rows.append(
+            [
+                {
+                    "type": "callback",
+                    "text": "🖨️ Гарантийный талон",
+                    "payload": f"sticker:{req.id}",
+                }
+            ]
+        )
+
+        attachments = (
+            [
+                {
+                    "type": "inline_keyboard",
+                    "payload": {"buttons": buttons_rows},
+                }
+            ]
+            if buttons_rows
+            else None
+        )
+
+        logger.info(
+            "notify_master_request_created: sending to master=%s, request=%s",
+            master.max_user_id,
+            req.id,
+        )
 
         client = MaxClient(token=MAX_ORDER_BOT_TOKEN)
+
         try:
-            resp = await client.send_text_to_user(user_id=master.max_user_id, text=text, attachments=attachments)
-            logger.info(f"notify_master_request_created: response={resp}")
+            response = await client.send_text_to_user(
+                user_id=master.max_user_id,
+                text=text,
+                attachments=attachments,
+            )
+
+            logger.info(
+                "notify_master_request_created: request=%s response=%s",
+                request_id,
+                response,
+            )
+
+            return True
+
+        except Exception:
+            logger.exception(
+                "notify_master_request_created: send failed for request=%s",
+                request_id,
+            )
+            return False
+
         finally:
             await client.close()
