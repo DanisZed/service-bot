@@ -6,8 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
+
 from app.db.session import AsyncSessionLocal
 from app.db.models import Master
+
 
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
@@ -17,21 +19,39 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
 
 
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         yield session
+
+
+
+def _extract_token(request: Request) -> str | None:
+    token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+
+    if not token:
+        authorization = request.headers.get("Authorization")
+        if authorization:
+            scheme, _, credentials = authorization.partition(" ")
+            if scheme.lower() == "bearer" and credentials:
+                token = credentials
+
+    return token
+
 
 
 async def get_current_master(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+    token = _extract_token(request)
+
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
+
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -41,12 +61,14 @@ async def get_current_master(
             detail="Invalid token",
         )
 
+
     master_id = payload.get("sub")
     if master_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
+
 
     result = await db.execute(
         select(Master)
@@ -59,5 +81,6 @@ async def get_current_master(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Master not found",
         )
+
 
     return master

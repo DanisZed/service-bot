@@ -7,10 +7,12 @@ from typing import Optional
 from urllib.parse import parse_qsl
 
 
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 
 
 from app.api.deps import get_db
@@ -24,11 +26,14 @@ from app.api.master_auth import (
 from app.db.models import Master
 
 
+
 router = APIRouter(prefix="/api/max", tags=["max-miniapp"])
+
 
 
 MAX_ORDER_BOT_TOKEN = os.getenv("MAX_ORDER_BOT_TOKEN")
 MAX_INIT_DATA_TTL_SECONDS = 3600
+
 
 
 
@@ -37,10 +42,13 @@ class MaxAuthRequest(BaseModel):
 
 
 
+
 class MaxMeOut(BaseModel):
     master_id: int
     name: Optional[str] = None
     is_admin: bool
+    access_token: str
+
 
 
 
@@ -52,8 +60,10 @@ def _validate_max_init_data(init_data: str) -> dict:
         )
 
 
+
     pairs = dict(parse_qsl(init_data, keep_blank_values=True))
     received_hash = pairs.pop("hash", None)
+
 
 
     if not received_hash:
@@ -63,10 +73,12 @@ def _validate_max_init_data(init_data: str) -> dict:
         )
 
 
+
     launch_params = "\n".join(
         f"{key}={value}"
         for key, value in sorted(pairs.items())
     )
+
 
 
     secret_key = hmac.new(
@@ -76,11 +88,13 @@ def _validate_max_init_data(init_data: str) -> dict:
     ).digest()
 
 
+
     calculated_hash = hmac.new(
         secret_key,
         launch_params.encode(),
         hashlib.sha256,
     ).hexdigest()
+
 
 
     if not hmac.compare_digest(calculated_hash, received_hash):
@@ -90,8 +104,10 @@ def _validate_max_init_data(init_data: str) -> dict:
         )
 
 
+
     auth_date = int(pairs.get("auth_date", "0"))
     now_ts = int(datetime.now(timezone.utc).timestamp())
+
 
 
     if not auth_date or now_ts - auth_date > MAX_INIT_DATA_TTL_SECONDS:
@@ -99,6 +115,7 @@ def _validate_max_init_data(init_data: str) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="initData expired",
         )
+
 
 
     user_raw = pairs.get("user")
@@ -109,7 +126,9 @@ def _validate_max_init_data(init_data: str) -> dict:
         )
 
 
+
     return json.loads(user_raw)
+
 
 
 
@@ -123,10 +142,12 @@ async def max_auth(
     max_user_id = int(max_user["id"])
 
 
+
     result = await db.execute(
         select(Master).where(Master.max_user_id == max_user_id)
     )
     master = result.scalar_one_or_none()
+
 
 
     if not master or not master.is_active:
@@ -136,7 +157,9 @@ async def max_auth(
         )
 
 
+
     access_token = _create_access_token(master)
+
 
 
     response.set_cookie(
@@ -151,8 +174,10 @@ async def max_auth(
     )
 
 
+
     return MaxMeOut(
         master_id=master.id,
         name=master.name,
         is_admin=bool(master.is_admin),
+        access_token=access_token,
     )
