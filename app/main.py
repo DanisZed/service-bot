@@ -3,15 +3,18 @@ import os
 import logging
 from pathlib import Path
 
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 
 from app.api.me import router as me_router
 from app.api.requests import router as requests_router
 from app.api.master_auth import router as master_auth_router
 from app.api.max_webhook import router as max_webhook_router
 from app.api.order_webhook import router as order_webhook_router
+
 
 from app.api import masters as masters_router
 from app.api import manage_master as manage_master_router
@@ -24,34 +27,39 @@ from app.api import service_center as service_center_router
 from app.api import public
 from app.api.max_miniapp import router as max_miniapp_router
 
+
 PANEL_BASE_URL = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
+MINIAPP_BASE_URL = os.getenv("MINIAPP_BASE_URL", "https://max.rbt-crm.ru")
+
 
 # Загружаем .env
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+
 logger = logging.getLogger(__name__)
-logger.info(
-    "MAIN DEBUG SECRET_KEY=%s MAX_BOT_TOKEN=%s",
-    os.getenv("SECRET_KEY"),
-    os.getenv("MAX_BOT_TOKEN"),
-)
+logger.info("MAIN DEBUG PANEL_BASE_URL=%s MINIAPP_BASE_URL=%s", PANEL_BASE_URL, MINIAPP_BASE_URL)
+
 
 origins = [
     PANEL_BASE_URL,
+    MINIAPP_BASE_URL,
     "http://localhost:5173",
-    "http://127.0.0.1:5173",    
+    "http://127.0.0.1:5173",
 ]
 
+
 app = FastAPI()
+
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
 
 # Подключаем ТОЛЬКО нужные роутеры
 app.include_router(me_router)
@@ -59,7 +67,7 @@ app.include_router(requests_router)
 app.include_router(master_auth_router)
 app.include_router(max_webhook_router)
 app.include_router(order_webhook_router)
-app.include_router(masters_router.router)          # ← добавить .router
+app.include_router(masters_router.router)
 app.include_router(manage_master_router.router)
 app.include_router(device_categories_router.router)
 app.include_router(lead_sources_router.router)
