@@ -1,8 +1,16 @@
 # app/services/webpush_sender.py
-import os
 import json
-from pywebpush import webpush, WebPushException
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+from pywebpush import WebPushException, webpush
+
 from app.db.models import WebPushSubscription
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_ROOT / ".env")
 
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:you@example.com")
@@ -10,6 +18,7 @@ VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:you@example.com")
 VAPID_CLAIMS = {
     "sub": VAPID_SUBJECT,
 }
+
 
 def send_webpush(sub: WebPushSubscription, payload: dict) -> bool:
     try:
@@ -27,14 +36,15 @@ def send_webpush(sub: WebPushSubscription, payload: dict) -> bool:
         )
         return True
     except WebPushException as e:
-        # ВРЕМЕННО логируем, чтобы увидеть, что отвечает push-сервис
         status = getattr(e.response, "status_code", None)
         body = None
+
         try:
             if e.response is not None:
                 body = e.response.content
         except Exception:
             pass
+
         print("WebPushException status:", status)
         print("WebPushException body:", body)
         print("Endpoint:", sub.endpoint)
