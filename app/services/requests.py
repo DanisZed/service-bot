@@ -2,6 +2,8 @@
 from datetime import datetime, time, timedelta
 from typing import Any, Dict, Optional, Tuple
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import func, select
 from app.db.models import ServiceRequest
 from app.services.notifications import schedule_visit_reminders
