@@ -183,10 +183,12 @@ async def create_part(
         comment=payload.comment,
     )
 
-    db.add(batch)
+        db.add(batch)
     await db.commit()
 
-    return await get_owned_part(part.id, current_master, db)
+    part = await get_owned_part(part.id, current_master, db)
+
+    return serialize_part(part)
 
 
 @router.get("/{part_id}", response_model=PartDetailOut)
@@ -223,10 +225,12 @@ async def add_part_batch(
         comment=payload.comment,
     )
 
-    db.add(batch)
+        db.add(batch)
     await db.commit()
 
-    return await get_owned_part(part.id, current_master, db)
+    part = await get_owned_part(part.id, current_master, db)
+
+    return serialize_part(part)
 
 
 @router.get("/requests/{request_id}", response_model=List[RequestPartOut])
