@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_master, get_db
-from app.db.models import Master, Part, PartBatch, RequestPart, ServiceRequest
+from app.db.models import Master, Part, PartBatch, RequestPart, ServiceRequest, Supplier
 
 router = APIRouter(prefix="/api/parts", tags=["parts"])
 
@@ -63,7 +63,7 @@ class PartUpdate(BaseModel):
 class PartBatchCreate(BaseModel):
     quantity: int
     purchase_price: float
-    supplier: Optional[str] = None
+    supplier_id: Optional[int] = None
     comment: Optional[str] = None
 
 
@@ -246,12 +246,27 @@ async def add_part_batch(
 
     part = await get_owned_part(part_id, current_master, db)
 
+    supplier = None
+
+    if payload.supplier_id:
+        result = await db.execute(
+            select(Supplier).where(
+                Supplier.id == payload.supplier_id,
+                Supplier.master_id == current_master.id,
+            )
+        )
+        supplier = result.scalar_one_or_none()
+
+        if not supplier:
+            raise HTTPException(status_code=404, detail="Поставщик не найден")
+
     batch = PartBatch(
         part_id=part.id,
         quantity_initial=payload.quantity,
         quantity_remaining=payload.quantity,
         purchase_price=Decimal(str(payload.purchase_price)),
-        supplier=payload.supplier,
+        supplier=supplier.name if supplier else None,
+        supplier_id=supplier.id if supplier else None,
         comment=payload.comment,
     )
 
@@ -261,7 +276,6 @@ async def add_part_batch(
     part = await get_owned_part(part.id, current_master, db)
 
     return serialize_part(part)
-
 
 @router.get("/requests/{request_id}", response_model=List[RequestPartOut])
 async def list_request_parts(
