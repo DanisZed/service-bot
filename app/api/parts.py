@@ -54,6 +54,11 @@ class PartCreate(BaseModel):
     supplier: Optional[str] = None
     comment: Optional[str] = None
 
+class PartUpdate(BaseModel):
+    category: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    name: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    is_active: Optional[bool] = None
+
 
 class PartBatchCreate(BaseModel):
     quantity: int
