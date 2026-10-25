@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -198,6 +198,31 @@ async def get_part(
     current_master: Master = Depends(get_current_master),
 ):
     part = await get_owned_part(part_id, current_master, db)
+    return serialize_part(part)
+
+
+@router.patch("/{part_id}", response_model=PartDetailOut)
+async def update_part(
+    part_id: int,
+    payload: PartUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    part = await get_owned_part(part_id, current_master, db)
+
+    if payload.category is not None:
+        part.category = payload.category.strip()
+
+    if payload.name is not None:
+        part.name = payload.name.strip()
+
+    if payload.is_active is not None:
+        part.is_active = payload.is_active
+
+    await db.commit()
+
+    part = await get_owned_part(part_id, current_master, db)
+
     return serialize_part(part)
 
 
