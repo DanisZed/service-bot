@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_master, get_db
-from app.db.models import Master, PartBatch, Supplier
+from app.db.models import Master, Part, PartBatch, Supplier
 
 router = APIRouter(prefix="/api/suppliers", tags=["suppliers"])
 
@@ -101,7 +101,8 @@ async def list_suppliers(
                 Decimal("0"),
             ).label("total_amount"),
         )
-        .where(PartBatch.master_id == current_master.id)
+        .join(Part, PartBatch.part_id == Part.id)
+        .where(Part.master_id == current_master.id)
         .group_by(PartBatch.supplier_id)
     )
     stats = {row.supplier_id: row._mapping for row in stats_result}
