@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
+
 from sqlalchemy import (
     Column,
     BigInteger,
@@ -17,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship
 
+
 Base = declarative_base()
 
 
@@ -26,13 +28,12 @@ class ServiceCenter(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     service_id = Column(String(10), unique=True, nullable=False, index=True)
     service_name = Column(Text, nullable=False)
-    address = Column(Text, nullable=True)          # адрес сервисного центра
-    website = Column(String(255), nullable=True)   # сайт
-    phone = Column(String(32), nullable=True)      # телефон
+    address = Column(Text, nullable=True)
+    website = Column(String(255), nullable=True)
+    phone = Column(String(32), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Связь с мастерами
     masters = relationship("Master", back_populates="service_center")
 
 
@@ -84,9 +85,9 @@ class ServiceRequest(Base):
 
     service_title = Column(Text, nullable=True)
     problem_description = Column(Text, nullable=False)
-    repair_description = Column(Text, nullable=True)   # описание для клиента
-    what_was_done = Column(Text, nullable=True)             
-    warranty_period = Column(Integer, nullable=True)   # срок гарантии в месяцах
+    repair_description = Column(Text, nullable=True)
+    what_was_done = Column(Text, nullable=True)
+    warranty_period = Column(Integer, nullable=True)
 
     location_type = Column(String(32), nullable=False)
     address = Column(Text, nullable=True)
@@ -108,12 +109,18 @@ class ServiceRequest(Base):
     google_url = Column(Text, nullable=True)
     meta = Column(JSON, nullable=True)
 
-    # Связи
     client = relationship("Client", back_populates="requests")
     time_slots = relationship("TimeSlotBooking", back_populates="request")
-    master = relationship("Master", primaryjoin="ServiceRequest.master_id == Master.id", back_populates="requests")
-    assigned_master = relationship("Master", primaryjoin="ServiceRequest.assigned_master_id == Master.id")
-    
+    master = relationship(
+        "Master",
+        primaryjoin="ServiceRequest.master_id == Master.id",
+        back_populates="requests",
+    )
+    assigned_master = relationship(
+        "Master",
+        primaryjoin="ServiceRequest.assigned_master_id == Master.id",
+    )
+
     lead_source_id = Column(Integer, ForeignKey("lead_source.id", ondelete="SET NULL"), nullable=True)
     lead_source = relationship("LeadSource", back_populates="requests")
 
@@ -131,7 +138,11 @@ class Master(Base):
 
     is_admin = Column(Integer, nullable=False, default=0)
 
-    service_center_id = Column(Integer, ForeignKey("service_center.id", ondelete="SET NULL"), nullable=True)
+    service_center_id = Column(
+        Integer,
+        ForeignKey("service_center.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     name = Column(Text, nullable=True)
     phone = Column(String(32), nullable=True)
@@ -147,45 +158,49 @@ class Master(Base):
     login_code = Column(String(16), nullable=True)
     login_code_expires_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Связи с foreign_keys
-    requests = relationship("ServiceRequest", primaryjoin="Master.id == ServiceRequest.master_id", back_populates="master")
+    requests = relationship(
+        "ServiceRequest",
+        primaryjoin="Master.id == ServiceRequest.master_id",
+        back_populates="master",
+    )
     service_center = relationship("ServiceCenter", back_populates="masters")
-    
+
     device_categories = relationship(
-        "DeviceCategory", 
+        "DeviceCategory",
         back_populates="master",
-        foreign_keys="DeviceCategory.master_id"
+        foreign_keys="DeviceCategory.master_id",
     )
-    
+
     device_subtypes = relationship(
-        "DeviceSubtype", 
+        "DeviceSubtype",
         back_populates="master",
-        foreign_keys="DeviceSubtype.master_id"
+        foreign_keys="DeviceSubtype.master_id",
     )
-    
+
     lead_sources = relationship(
-        "LeadSource", 
+        "LeadSource",
         back_populates="master",
-        foreign_keys="LeadSource.master_id"
+        foreign_keys="LeadSource.master_id",
     )
 
     webpush_subscriptions = relationship(
         "WebPushSubscription",
         back_populates="master",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
     social_links = relationship(
         "MasterSocialLink",
         back_populates="master",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
     parts = relationship(
         "Part",
         back_populates="master",
         cascade="all, delete-orphan",
-)
+    )
+
 
 class MasterSocialLink(Base):
     __tablename__ = "master_social_link"
@@ -193,7 +208,7 @@ class MasterSocialLink(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), nullable=False)
 
-    type = Column(String(32), nullable=False)  # 'instagram', 'vk', 'telegram', 'site', ...
+    type = Column(String(32), nullable=False)
     url = Column(Text, nullable=False)
 
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
@@ -206,7 +221,9 @@ class TimeSlotBooking(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     service_request_id = Column(
-        BigInteger, ForeignKey("service_request.id", ondelete="CASCADE"), nullable=False
+        BigInteger,
+        ForeignKey("service_request.id", ondelete="CASCADE"),
+        nullable=False,
     )
     date_iso = Column(Date, nullable=False)
     time_slot = Column(String(32), nullable=False)
@@ -229,14 +246,22 @@ class DeviceCategory(Base):
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
 
-    # Связи с foreign_keys
-    master = relationship("Master", back_populates="device_categories", foreign_keys=[master_id])
+    master = relationship(
+        "Master",
+        back_populates="device_categories",
+        foreign_keys=[master_id],
+    )
     subtypes = relationship("DeviceSubtype", back_populates="category")
 
     __table_args__ = (
-        UniqueConstraint('master_id', 'name'),
+        UniqueConstraint("master_id", "name"),
     )
 
 
@@ -253,15 +278,24 @@ class DeviceSubtype(Base):
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
 
-    # Связи с foreign_keys
-    master = relationship("Master", back_populates="device_subtypes", foreign_keys=[master_id])
+    master = relationship(
+        "Master",
+        back_populates="device_subtypes",
+        foreign_keys=[master_id],
+    )
     category = relationship("DeviceCategory", back_populates="subtypes")
 
     __table_args__ = (
-        UniqueConstraint('master_id', 'category_id', 'name'),
+        UniqueConstraint("master_id", "category_id", "name"),
     )
+
 
 class LeadSource(Base):
     __tablename__ = "lead_source"
@@ -272,18 +306,25 @@ class LeadSource(Base):
     code = Column(String(50), nullable=True)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    # 👇 НОВОЕ ПОЛЕ
-    is_advertisable = Column(Boolean, default=False, nullable=False)  # Можно ли использовать для рекламы
+    is_advertisable = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
 
-    # Связи
-    master = relationship("Master", back_populates="lead_sources", foreign_keys=[master_id])
+    master = relationship(
+        "Master",
+        back_populates="lead_sources",
+        foreign_keys=[master_id],
+    )
     budgets = relationship("AdBudget", back_populates="source")
     requests = relationship("ServiceRequest", back_populates="lead_source")
 
     __table_args__ = (
-        UniqueConstraint('master_id', 'name'),
+        UniqueConstraint("master_id", "name"),
     )
 
 
@@ -298,11 +339,10 @@ class AdBudget(Base):
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
-    # Связи
     source = relationship("LeadSource", back_populates="budgets")
 
     __table_args__ = (
-        UniqueConstraint('source_id', 'budget_date'),
+        UniqueConstraint("source_id", "budget_date"),
     )
 
 
@@ -310,7 +350,12 @@ class WebPushSubscription(Base):
     __tablename__ = "webpush_subscription"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), index=True, nullable=False)
+    master_id = Column(
+        BigInteger,
+        ForeignKey("master.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
 
     endpoint = Column(Text, unique=True, nullable=False)
     p256dh = Column(Text, nullable=False)
@@ -327,8 +372,18 @@ class Notification(Base):
     __tablename__ = "notification"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    master_id = Column(BigInteger, ForeignKey("master.id", ondelete="CASCADE"), index=True, nullable=False)
-    request_id = Column(BigInteger, ForeignKey("service_request.id", ondelete="CASCADE"), index=True, nullable=False)
+    master_id = Column(
+        BigInteger,
+        ForeignKey("master.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    request_id = Column(
+        BigInteger,
+        ForeignKey("service_request.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
 
     type = Column(String(32), nullable=False, default="visit_reminder")
     channel = Column(String(32), nullable=False, default="webpush")
@@ -339,10 +394,43 @@ class Notification(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     master = relationship("Master")
-    request = relationship("ServiceRequest")    
+    request = relationship("ServiceRequest")
 
-    # app/db/models.py
-# Модели склада запчастей: запчасть, партии закупки и списания в заявки.
+
+# Модели склада запчастей: поставщики, запчасти, партии закупки и списания в заявки.
+
+
+class Supplier(Base):
+    __tablename__ = "supplier"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    master_id = Column(
+        Integer,
+        ForeignKey("master.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    name = Column(String(255), nullable=False)
+    phone = Column(String(50), nullable=True)
+    comment = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    master = relationship("Master")
+    batches = relationship("PartBatch", back_populates="supplier_rel")
+
 
 class Part(Base):
     __tablename__ = "part"
@@ -396,7 +484,15 @@ class PartBatch(Base):
     supplier = Column(Text, nullable=True)
     comment = Column(Text, nullable=True)
 
+    supplier_id = Column(
+        Integer,
+        ForeignKey("supplier.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     part = relationship("Part", back_populates="batches")
+    supplier_rel = relationship("Supplier", back_populates="batches")
 
 
 class RequestPart(Base):
