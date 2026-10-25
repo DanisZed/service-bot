@@ -183,7 +183,7 @@ async def create_part(
         comment=payload.comment,
     )
 
-        db.add(batch)
+    db.add(batch)
     await db.commit()
 
     part = await get_owned_part(part.id, current_master, db)
