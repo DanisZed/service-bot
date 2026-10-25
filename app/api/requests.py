@@ -133,6 +133,7 @@ class CreateRequestFromWeb(BaseModel):
     total_amount: Optional[float] = None
     parts_cost: Optional[float] = None
     source: str = "web"
+    yandex_url: Optional[str] = None
 
 
 class WallboardRequestItem(BaseModel):
@@ -337,7 +338,7 @@ async def create_request_from_web(
         "paid_amount": None,
         "paid_at": None,
         "source": payload.source,
-        "yandex_url": None,
+        "yandex_url": payload.yandex_url,
         "google_url": None,
         "meta": None,
     }

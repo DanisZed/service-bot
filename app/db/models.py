@@ -181,6 +181,12 @@ class Master(Base):
         cascade="all, delete-orphan"
     )
 
+    parts = relationship(
+        "Part",
+        back_populates="master",
+        cascade="all, delete-orphan",
+)
+
 class MasterSocialLink(Base):
     __tablename__ = "master_social_link"
 
@@ -334,3 +340,94 @@ class Notification(Base):
 
     master = relationship("Master")
     request = relationship("ServiceRequest")    
+
+    # app/db/models.py
+# Модели склада запчастей: запчасть, партии закупки и списания в заявки.
+
+class Part(Base):
+    __tablename__ = "part"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    master_id = Column(
+        BigInteger,
+        ForeignKey("master.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    category = Column(String(100), nullable=False)
+    name = Column(Text, nullable=False)
+
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    master = relationship("Master", back_populates="parts")
+    batches = relationship(
+        "PartBatch",
+        back_populates="part",
+        cascade="all, delete-orphan",
+        order_by="PartBatch.purchased_at",
+    )
+
+
+class PartBatch(Base):
+    __tablename__ = "part_batch"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    part_id = Column(
+        BigInteger,
+        ForeignKey("part.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    quantity_initial = Column(Integer, nullable=False)
+    quantity_remaining = Column(Integer, nullable=False)
+
+    purchase_price = Column(Numeric(12, 2), nullable=False)
+    purchased_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    supplier = Column(Text, nullable=True)
+    comment = Column(Text, nullable=True)
+
+    part = relationship("Part", back_populates="batches")
+
+
+class RequestPart(Base):
+    __tablename__ = "request_part"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    request_id = Column(
+        BigInteger,
+        ForeignKey("service_request.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    part_id = Column(
+        BigInteger,
+        ForeignKey("part.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    batch_id = Column(
+        BigInteger,
+        ForeignKey("part_batch.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    quantity = Column(Integer, nullable=False)
+    unit_cost = Column(Numeric(12, 2), nullable=False)
+    total_cost = Column(Numeric(12, 2), nullable=False)
+
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    request = relationship("ServiceRequest")
+    part = relationship("Part")
+    batch = relationship("PartBatch")
