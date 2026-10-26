@@ -1,24 +1,42 @@
 # app/api/parts.py
-# API склада запчастей: список, создание, партии закупки и FIFO-списание в заявку.
+# API склада запчастей: список, создание, партии закупки, FIFO-списание в заявку и категории.
+
 
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+
 from app.api.deps import get_current_master, get_db
-from app.db.models import Master, Part, PartBatch, RequestPart, ServiceRequest, Supplier
+from app.db.models import (
+    Master,
+    Part,
+    PartBatch,
+    PartCategory,
+    RequestPart,
+    ServiceRequest,
+    Supplier,
+)
+
 
 import logging
 
+
 logger = logging.getLogger(__name__)
 
+
 router = APIRouter(prefix="/api/parts", tags=["parts"])
+
+
+
+# ========== СХЕМЫ ==========
 
 
 class PartOut(BaseModel):
@@ -29,8 +47,10 @@ class PartOut(BaseModel):
     purchase_price: Optional[float] = None
     is_active: bool
 
+
     class Config:
         from_attributes = True
+
 
 
 class PartBatchOut(BaseModel):
@@ -42,12 +62,15 @@ class PartBatchOut(BaseModel):
     supplier: Optional[str] = None
     comment: Optional[str] = None
 
+
     class Config:
         from_attributes = True
 
 
+
 class PartDetailOut(PartOut):
     batches: List[PartBatchOut] = []
+
 
 
 class PartCreate(BaseModel):
@@ -58,10 +81,13 @@ class PartCreate(BaseModel):
     supplier_id: Optional[int] = None
     comment: Optional[str] = None
 
+
+
 class PartUpdate(BaseModel):
     category: Optional[str] = Field(default=None, min_length=1, max_length=100)
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     is_active: Optional[bool] = None
+
 
 
 class PartBatchCreate(BaseModel):
@@ -69,6 +95,7 @@ class PartBatchCreate(BaseModel):
     purchase_price: float
     supplier_id: Optional[int] = None
     comment: Optional[str] = None
+
 
 
 class RequestPartOut(BaseModel):
@@ -81,8 +108,10 @@ class RequestPartOut(BaseModel):
     total_cost: float
     created_at: datetime
 
+
     class Config:
         from_attributes = True
+
 
 
 class ConsumePartPayload(BaseModel):
@@ -90,13 +119,27 @@ class ConsumePartPayload(BaseModel):
     quantity: int
 
 
-class CategoryCreate(BaseModel):
-    category: str
+
+class PartCategoryCreate(BaseModel):
+    name: str
+
+
+
+class PartCategoryOut(BaseModel):
+    id: int
+    name: str
+
+
+
+# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 
 def serialize_part(part: Part) -> dict:
     total_quantity = sum(batch.quantity_remaining for batch in part.batches)
-    available_batches = [batch for batch in part.batches if batch.quantity_remaining > 0]
+    available_batches = [
+        batch for batch in part.batches if batch.quantity_remaining > 0
+    ]
+
 
     return {
         "id": part.id,
@@ -124,6 +167,7 @@ def serialize_part(part: Part) -> dict:
     }
 
 
+
 async def get_owned_part(
     part_id: int,
     current_master: Master,
@@ -138,12 +182,19 @@ async def get_owned_part(
         )
     )
 
+
     part = result.scalar_one_or_none()
+
 
     if not part:
         raise HTTPException(status_code=404, detail="Запчасть не найдена")
 
+
     return part
+
+
+
+# ========== ЗАПЧАСТИ ==========
 
 
 @router.get("", response_model=List[PartDetailOut])
@@ -161,9 +212,148 @@ async def list_parts(
         .order_by(Part.category, Part.name)
     )
 
+
     parts = result.scalars().unique().all()
 
+
     return [serialize_part(part) for part in parts]
+
+
+
+# ========== КАТЕГОРИИ ЗАПЧАСТЕЙ ==========
+
+
+@router.get("/categories", response_model=List[PartCategoryOut])
+async def list_part_categories(
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    result = await db.execute(
+        select(PartCategory)
+        .where(
+            PartCategory.master_id == current_master.id,
+            PartCategory.is_active == True,
+        )
+        .order_by(PartCategory.name)
+    )
+
+
+    categories = result.scalars().all()
+
+
+    return [
+        PartCategoryOut(
+            id=category.id,
+            name=category.name,
+        )
+        for category in categories
+    ]
+
+
+
+@router.post("/categories", response_model=PartCategoryOut, status_code=201)
+async def create_part_category(
+    payload: PartCategoryCreate,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    name = payload.name.strip()
+
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Название категории обязательно"
+        )
+
+
+    result = await db.execute(
+        select(PartCategory).where(
+            PartCategory.master_id == current_master.id,
+            func.lower(PartCategory.name) == name.lower(),
+        )
+    )
+
+
+    existing = result.scalar_one_or_none()
+
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Такая категория уже существует"
+        )
+
+
+    category = PartCategory(
+        master_id=current_master.id,
+        name=name,
+    )
+
+
+    db.add(category)
+    await db.commit()
+    await db.refresh(category)
+
+
+    return PartCategoryOut(
+        id=category.id,
+        name=category.name,
+    )
+
+
+
+@router.delete("/categories/{category_id}")
+async def delete_part_category(
+    category_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    result = await db.execute(
+        select(PartCategory).where(
+            PartCategory.id == category_id,
+            PartCategory.master_id == current_master.id,
+        )
+    )
+
+
+    category = result.scalar_one_or_none()
+
+
+    if not category:
+        raise HTTPException(
+            status_code=404,
+            detail="Категория не найдена"
+        )
+
+
+    parts_result = await db.execute(
+        select(Part).where(
+            Part.master_id == current_master.id,
+            Part.category == category.name,
+        )
+    )
+
+
+    parts_in_category = parts_result.scalars().all()
+
+
+    if parts_in_category:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя удалить категорию, в которой есть запчасти"
+        )
+
+
+    await db.delete(category)
+    await db.commit()
+
+
+    return {"success": True}
+
+
+
+# ========== CRUD ЗАПЧАСТЕЙ ==========
 
 
 @router.post("", response_model=PartDetailOut, status_code=201)
@@ -171,12 +361,20 @@ async def create_part(
     payload: PartCreate,
     db: AsyncSession = Depends(get_db),
     current_master: Master = Depends(get_current_master),
-):      
+):
     if payload.quantity <= 0:
-        raise HTTPException(status_code=400, detail="Количество должно быть больше нуля")
+        raise HTTPException(
+            status_code=400,
+            detail="Количество должно быть больше нуля"
+        )
+
 
     if payload.purchase_price < 0:
-        raise HTTPException(status_code=400, detail="Цена не может быть отрицательной")
+        raise HTTPException(
+            status_code=400,
+            detail="Цена не может быть отрицательной"
+        )
+
 
     part = Part(
         master_id=current_master.id,
@@ -184,10 +382,13 @@ async def create_part(
         name=payload.name.strip(),
     )
 
+
     db.add(part)
     await db.flush()
 
+
     supplier = None
+
 
     if payload.supplier_id:
         supplier_result = await db.execute(
@@ -198,8 +399,10 @@ async def create_part(
         )
         supplier = supplier_result.scalar_one_or_none()
 
+
         if not supplier:
             raise HTTPException(status_code=404, detail="Поставщик не найден")
+
 
     batch = PartBatch(
         part_id=part.id,
@@ -211,12 +414,16 @@ async def create_part(
         comment=payload.comment,
     )
 
+
     db.add(batch)
     await db.commit()
 
+
     part = await get_owned_part(part.id, current_master, db)
 
+
     return serialize_part(part)
+
 
 
 @router.get("/{part_id}", response_model=PartDetailOut)
@@ -229,6 +436,7 @@ async def get_part(
     return serialize_part(part)
 
 
+
 @router.patch("/{part_id}", response_model=PartDetailOut)
 async def update_part(
     part_id: int,
@@ -238,20 +446,27 @@ async def update_part(
 ):
     part = await get_owned_part(part_id, current_master, db)
 
+
     if payload.category is not None:
         part.category = payload.category.strip()
+
 
     if payload.name is not None:
         part.name = payload.name.strip()
 
+
     if payload.is_active is not None:
         part.is_active = payload.is_active
 
+
     await db.commit()
+
 
     part = await get_owned_part(part_id, current_master, db)
 
+
     return serialize_part(part)
+
 
 
 @router.post("/{part_id}/batches", response_model=PartDetailOut)
@@ -262,14 +477,24 @@ async def add_part_batch(
     current_master: Master = Depends(get_current_master),
 ):
     if payload.quantity <= 0:
-        raise HTTPException(status_code=400, detail="Количество должно быть больше нуля")
+        raise HTTPException(
+            status_code=400,
+            detail="Количество должно быть больше нуля"
+        )
+
 
     if payload.purchase_price < 0:
-        raise HTTPException(status_code=400, detail="Цена не может быть отрицательной")
+        raise HTTPException(
+            status_code=400,
+            detail="Цена не может быть отрицательной"
+        )
+
 
     part = await get_owned_part(part_id, current_master, db)
 
+
     supplier = None
+
 
     if payload.supplier_id:
         result = await db.execute(
@@ -280,8 +505,10 @@ async def add_part_batch(
         )
         supplier = result.scalar_one_or_none()
 
+
         if not supplier:
             raise HTTPException(status_code=404, detail="Поставщик не найден")
+
 
     batch = PartBatch(
         part_id=part.id,
@@ -293,12 +520,20 @@ async def add_part_batch(
         comment=payload.comment,
     )
 
+
     db.add(batch)
     await db.commit()
 
+
     part = await get_owned_part(part.id, current_master, db)
 
+
     return serialize_part(part)
+
+
+
+# ========== ЗАПЧАСТИ В ЗАЯВКАХ ==========
+
 
 @router.get("/requests/{request_id}", response_model=List[RequestPartOut])
 async def list_request_parts(
@@ -308,11 +543,13 @@ async def list_request_parts(
 ):
     request = await db.get(ServiceRequest, request_id)
 
+
     if not request or (
         request.master_id != current_master.id
         and request.assigned_master_id != current_master.id
     ):
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+
 
     result = await db.execute(
         select(RequestPart)
@@ -321,7 +558,9 @@ async def list_request_parts(
         .order_by(RequestPart.created_at)
     )
 
+
     items = result.scalars().unique().all()
+
 
     return [
         {
@@ -338,6 +577,7 @@ async def list_request_parts(
     ]
 
 
+
 @router.post("/requests/{request_id}/consume", response_model=List[RequestPartOut])
 async def consume_part(
     request_id: int,
@@ -347,20 +587,28 @@ async def consume_part(
 ):
     request = await db.get(ServiceRequest, request_id)
 
+
     if not request or (
         request.master_id != current_master.id
         and request.assigned_master_id != current_master.id
     ):
         raise HTTPException(status_code=404, detail="Заявка не найдена")
 
+
     if payload.quantity <= 0:
-        raise HTTPException(status_code=400, detail="Количество должно быть больше нуля")
+        raise HTTPException(
+            status_code=400,
+            detail="Количество должно быть больше нуля"
+        )
+
 
     part = await get_owned_part(payload.part_id, current_master, db)
+
 
     available_quantity = sum(
         batch.quantity_remaining for batch in part.batches
     )
+
 
     if available_quantity < payload.quantity:
         raise HTTPException(
@@ -368,20 +616,26 @@ async def consume_part(
             detail=f"Недостаточно запчастей. Доступно: {available_quantity}",
         )
 
+
     remaining = payload.quantity
     created_items = []
+
 
     for batch in part.batches:
         if remaining <= 0:
             break
 
+
         if batch.quantity_remaining <= 0:
             continue
 
+
         take = min(batch.quantity_remaining, remaining)
+
 
         batch.quantity_remaining -= take
         remaining -= take
+
 
         item = RequestPart(
             request_id=request.id,
@@ -392,15 +646,18 @@ async def consume_part(
             total_cost=batch.purchase_price * take,
         )
 
+
         db.add(item)
         created_items.append(item)
 
 
     await db.commit()
 
+
     for item in created_items:
         await db.refresh(item)
-        
+
+
     return [
         {
             "id": item.id,
@@ -414,6 +671,8 @@ async def consume_part(
         }
         for item in created_items
     ]
+
+
 
 @router.delete("/requests/{request_id}/parts/{item_id}", status_code=204)
 async def delete_request_part(
@@ -456,56 +715,3 @@ async def delete_request_part(
 
     await db.delete(item)
     await db.commit()
-
-
-@router.post("/categories")
-async def create_category(
-    data: CategoryCreate,
-    current_master: Master = Depends(get_current_master),
-    db: AsyncSession = Depends(get_session),
-):
-    category = data.category.strip()
-
-
-    if not category:
-        raise HTTPException(status_code=400, detail="Название категории обязательно")
-
-
-    result = await db.execute(
-        select(Part).where(Part.category == category)
-    )
-    existing_part = result.scalar_one_or_none()
-
-
-    if existing_part:
-        raise HTTPException(status_code=400, detail="Категория уже существует")
-
-
-    # Категория существует только вместе с запчастями.
-    # Поэтому создаём служебную запись или используем отдельную таблицу.
-    raise HTTPException(
-        status_code=501,
-        detail="Создание категорий требует отдельной таблицы categories"
-    )
-
-
-    @router.delete("/categories/{category}")
-async def delete_category(
-    category: str,
-    current_master: Master = Depends(get_current_master),
-    db: AsyncSession = Depends(get_session),
-):
-    result = await db.execute(
-        select(Part).where(Part.category == category)
-    )
-    parts_in_category = result.scalars().all()
-
-
-    if parts_in_category:
-        raise HTTPException(
-            status_code=400,
-            detail="Нельзя удалить категорию, в которой есть запчасти"
-        )
-
-
-    return {"success": True}
