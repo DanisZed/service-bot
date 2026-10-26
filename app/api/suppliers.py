@@ -177,3 +177,37 @@ async def delete_supplier(
     supplier.is_active = False
 
     await db.commit()
+
+
+@router.get("/{supplier_id}/batches")
+async def list_supplier_batches(
+    supplier_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    supplier = await get_owned_supplier(supplier_id, current_master, db)
+
+    result = await db.execute(
+        select(PartBatch)
+        .join(Part, PartBatch.part_id == Part.id)
+        .where(
+            PartBatch.supplier_id == supplier.id,
+            Part.master_id == current_master.id,
+        )
+        .order_by(PartBatch.purchased_at.desc())
+    )
+    batches = result.scalars().unique().all()
+
+    return [
+        {
+            "id": batch.id,
+            "part_id": batch.part_id,
+            "part_name": batch.part.name if batch.part else "",
+            "quantity_initial": batch.quantity_initial,
+            "quantity_remaining": batch.quantity_remaining,
+            "purchase_price": float(batch.purchase_price),
+            "purchased_at": batch.purchased_at,
+            "comment": batch.comment,
+        }
+        for batch in batches
+    ]
