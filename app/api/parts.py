@@ -55,7 +55,7 @@ class PartCreate(BaseModel):
     name: str
     quantity: int
     purchase_price: float
-    supplier: Optional[str] = None
+    supplier_id: Optional[int] = None
     comment: Optional[str] = None
 
 class PartUpdate(BaseModel):
@@ -167,8 +167,7 @@ async def create_part(
     payload: PartCreate,
     db: AsyncSession = Depends(get_db),
     current_master: Master = Depends(get_current_master),
-):  
-    logger.info("CREATE_PART payload=%s", payload)
+):      
     if payload.quantity <= 0:
         raise HTTPException(status_code=400, detail="Количество должно быть больше нуля")
 
@@ -184,12 +183,27 @@ async def create_part(
     db.add(part)
     await db.flush()
 
+    supplier = None
+
+    if payload.supplier_id:
+        supplier_result = await db.execute(
+            select(Supplier).where(
+                Supplier.id == payload.supplier_id,
+                Supplier.master_id == current_master.id,
+            )
+        )
+        supplier = supplier_result.scalar_one_or_none()
+
+        if not supplier:
+            raise HTTPException(status_code=404, detail="Поставщик не найден")
+
     batch = PartBatch(
         part_id=part.id,
         quantity_initial=payload.quantity,
         quantity_remaining=payload.quantity,
         purchase_price=Decimal(str(payload.purchase_price)),
-        supplier=payload.supplier,
+        supplier=supplier.name if supplier else None,
+        supplier_id=supplier.id if supplier else None,
         comment=payload.comment,
     )
 
