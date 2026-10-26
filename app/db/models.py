@@ -528,3 +528,45 @@ class RequestPart(Base):
     request = relationship("ServiceRequest")
     part = relationship("Part")
     batch = relationship("PartBatch")
+
+
+class PartCategory(Base):
+    __tablename__ = "part_categories"
+
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+
+    master_id = Column(
+        BigInteger,
+        ForeignKey("master.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+    name = Column(String(100), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+    master = relationship("Master")
+
+
+    __table_args__ = (
+        UniqueConstraint("master_id", "name"),
+    )

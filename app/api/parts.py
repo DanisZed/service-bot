@@ -90,6 +90,10 @@ class ConsumePartPayload(BaseModel):
     quantity: int
 
 
+class CategoryCreate(BaseModel):
+    category: str
+
+
 def serialize_part(part: Part) -> dict:
     total_quantity = sum(batch.quantity_remaining for batch in part.batches)
     available_batches = [batch for batch in part.batches if batch.quantity_remaining > 0]
@@ -452,3 +456,56 @@ async def delete_request_part(
 
     await db.delete(item)
     await db.commit()
+
+
+@router.post("/categories")
+async def create_category(
+    data: CategoryCreate,
+    current_master: Master = Depends(get_current_master),
+    db: AsyncSession = Depends(get_session),
+):
+    category = data.category.strip()
+
+
+    if not category:
+        raise HTTPException(status_code=400, detail="Название категории обязательно")
+
+
+    result = await db.execute(
+        select(Part).where(Part.category == category)
+    )
+    existing_part = result.scalar_one_or_none()
+
+
+    if existing_part:
+        raise HTTPException(status_code=400, detail="Категория уже существует")
+
+
+    # Категория существует только вместе с запчастями.
+    # Поэтому создаём служебную запись или используем отдельную таблицу.
+    raise HTTPException(
+        status_code=501,
+        detail="Создание категорий требует отдельной таблицы categories"
+    )
+
+
+    @router.delete("/categories/{category}")
+async def delete_category(
+    category: str,
+    current_master: Master = Depends(get_current_master),
+    db: AsyncSession = Depends(get_session),
+):
+    result = await db.execute(
+        select(Part).where(Part.category == category)
+    )
+    parts_in_category = result.scalars().all()
+
+
+    if parts_in_category:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя удалить категорию, в которой есть запчасти"
+        )
+
+
+    return {"success": True}
