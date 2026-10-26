@@ -493,6 +493,7 @@ class PartBatch(Base):
 
     part = relationship("Part", back_populates="batches")
     supplier_rel = relationship("Supplier", back_populates="batches")
+    request_parts = relationship("RequestPart", back_populates="batch")
 
 
 class RequestPart(Base):

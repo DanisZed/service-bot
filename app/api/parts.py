@@ -391,11 +391,12 @@ async def consume_part(
         db.add(item)
         created_items.append(item)
 
+
     await db.commit()
 
     for item in created_items:
         await db.refresh(item)
-
+        
     return [
         {
             "id": item.id,
@@ -409,3 +410,45 @@ async def consume_part(
         }
         for item in created_items
     ]
+
+@router.delete("/requests/{request_id}/parts/{item_id}", status_code=204)
+async def delete_request_part(
+    request_id: int,
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    request = await db.get(ServiceRequest, request_id)
+
+
+    if not request or (
+        request.master_id != current_master.id
+        and request.assigned_master_id != current_master.id
+    ):
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+
+
+    result = await db.execute(
+        select(RequestPart)
+        .options(selectinload(RequestPart.batch))
+        .where(
+            RequestPart.id == item_id,
+            RequestPart.request_id == request_id,
+        )
+    )
+    item = result.scalar_one_or_none()
+
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Запчасть не найдена")
+
+
+    batch = item.batch
+
+
+    if batch:
+        batch.quantity_remaining += item.quantity
+
+
+    await db.delete(item)
+    await db.commit()
