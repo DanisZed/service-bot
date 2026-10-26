@@ -122,12 +122,14 @@ class ConsumePartPayload(BaseModel):
 
 class PartCategoryCreate(BaseModel):
     name: str
+    parent_id: Optional[int] = None
 
 
 
 class PartCategoryOut(BaseModel):
     id: int
     name: str
+    parent_id: Optional[int] = None
 
 
 
@@ -234,7 +236,7 @@ async def list_part_categories(
             PartCategory.master_id == current_master.id,
             PartCategory.is_active == True,
         )
-        .order_by(PartCategory.name)
+        .order_by(PartCategory.parent_id, PartCategory.name)
     )
 
 
@@ -245,6 +247,7 @@ async def list_part_categories(
         PartCategoryOut(
             id=category.id,
             name=category.name,
+            parent_id=category.parent_id,
         )
         for category in categories
     ]
@@ -267,26 +270,61 @@ async def create_part_category(
         )
 
 
-    result = await db.execute(
+    parent = None
+
+
+    if payload.parent_id is not None:
+        parent_result = await db.execute(
+            select(PartCategory).where(
+                PartCategory.id == payload.parent_id,
+                PartCategory.master_id == current_master.id,
+            )
+        )
+        parent = parent_result.scalar_one_or_none()
+
+
+        if not parent:
+            raise HTTPException(
+                status_code=404,
+                detail="Родительская категория не найдена"
+            )
+
+
+        if parent.parent_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Подкатегория не может быть родительской категорией"
+            )
+
+
+    duplicate_result = await db.execute(
         select(PartCategory).where(
             PartCategory.master_id == current_master.id,
+            PartCategory.parent_id == payload.parent_id,
             func.lower(PartCategory.name) == name.lower(),
         )
     )
 
 
-    existing = result.scalar_one_or_none()
+    existing = duplicate_result.scalar_one_or_none()
 
 
     if existing:
+        if payload.parent_id is None:
+            detail = "Такая категория уже существует"
+        else:
+            detail = "Такая подкатегория уже существует"
+
+
         raise HTTPException(
             status_code=400,
-            detail="Такая категория уже существует"
+            detail=detail
         )
 
 
     category = PartCategory(
         master_id=current_master.id,
+        parent_id=payload.parent_id,
         name=name,
     )
 
@@ -299,6 +337,7 @@ async def create_part_category(
     return PartCategoryOut(
         id=category.id,
         name=category.name,
+        parent_id=category.parent_id,
     )
 
 
@@ -324,6 +363,23 @@ async def delete_part_category(
         raise HTTPException(
             status_code=404,
             detail="Категория не найдена"
+        )
+
+
+    children_result = await db.execute(
+        select(PartCategory).where(
+            PartCategory.parent_id == category.id
+        )
+    )
+
+
+    children = children_result.scalars().all()
+
+
+    if children:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя удалить категорию, в которой есть подкатегории"
         )
 
 
