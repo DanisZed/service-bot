@@ -14,6 +14,10 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_master, get_db
 from app.db.models import Master, Part, PartBatch, RequestPart, ServiceRequest, Supplier
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/parts", tags=["parts"])
 
 
@@ -163,7 +167,8 @@ async def create_part(
     payload: PartCreate,
     db: AsyncSession = Depends(get_db),
     current_master: Master = Depends(get_current_master),
-):
+):  
+    logger.info("CREATE_PART payload=%s", payload)
     if payload.quantity <= 0:
         raise HTTPException(status_code=400, detail="Количество должно быть больше нуля")
 
