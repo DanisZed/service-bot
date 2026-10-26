@@ -144,7 +144,6 @@ async def get_supplier(
 
     stats_result = await db.execute(
         select(
-            PartBatch.supplier_id,
             func.count(PartBatch.id).label("batches_count"),
             func.coalesce(func.sum(PartBatch.quantity_initial), 0).label("total_quantity"),
             func.coalesce(
@@ -157,10 +156,10 @@ async def get_supplier(
             PartBatch.supplier_id == supplier.id,
             Part.master_id == current_master.id,
         )
-        .group_by(PartBatch.supplier_id)
     )
-    stats_row = stats_result.scalar_one_or_none()
-    stats = stats_row._mapping if stats_row else {}
+
+    stats_row = stats_result.one()
+    stats = stats_row._mapping
 
     return serialize_supplier(supplier, stats)
 
