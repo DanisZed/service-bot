@@ -545,6 +545,14 @@ class PartCategory(Base):
     )
 
 
+    parent_id = Column(
+        Integer,
+        ForeignKey("part_categories.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+
     name = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 
@@ -567,6 +575,13 @@ class PartCategory(Base):
     master = relationship("Master")
 
 
+    parent = relationship(
+        "PartCategory",
+        remote_side=[id],
+        backref="children",
+    )
+
+
     __table_args__ = (
-        UniqueConstraint("master_id", "name"),
+        UniqueConstraint("master_id", "parent_id", "name"),
     )
