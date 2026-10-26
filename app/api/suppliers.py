@@ -7,6 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_master, get_db
@@ -189,6 +190,7 @@ async def list_supplier_batches(
 
     result = await db.execute(
         select(PartBatch)
+        .options(selectinload(PartBatch.part))
         .join(Part, PartBatch.part_id == Part.id)
         .where(
             PartBatch.supplier_id == supplier.id,
