@@ -121,8 +121,21 @@ class ServiceRequest(Base):
         primaryjoin="ServiceRequest.assigned_master_id == Master.id",
     )
 
-    lead_source_id = Column(Integer, ForeignKey("lead_source.id", ondelete="SET NULL"), nullable=True)
-    lead_source = relationship("LeadSource", back_populates="requests")
+    lead_source_id = Column(
+    Integer,
+    ForeignKey("lead_source.id", ondelete="SET NULL"),
+    nullable=True,
+)
+
+    lead_source = relationship(
+        "LeadSource",
+        back_populates="requests",
+        lazy="selectin",
+    )
+
+    @property
+    def lead_source_name(self):
+        return self.lead_source.name if self.lead_source else None
 
 
 class Master(Base):

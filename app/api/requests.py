@@ -74,6 +74,8 @@ class ServiceRequestOut(BaseModel):
 
     # Источник и внешние ссылки
     source: str
+    lead_source_id: Optional[int] = None
+    lead_source_name: Optional[str] = None
     yandex_url: Optional[str] = None
     google_url: Optional[str] = None
     
