@@ -585,3 +585,213 @@ class PartCategory(Base):
     __table_args__ = (
         UniqueConstraint("master_id", "parent_id", "name"),
     )
+
+
+# ========== Финансы: расходы, категории расходов и сделки перепродажи ==========
+
+
+class ExpenseCategory(Base):
+    __tablename__ = "expense_categories"
+
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+
+    master_id = Column(
+        BigInteger,
+        ForeignKey("master.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+    parent_id = Column(
+        Integer,
+        ForeignKey("expense_categories.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+
+    name = Column(String(100), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+    master = relationship("Master")
+
+
+    parent = relationship(
+        "ExpenseCategory",
+        remote_side=[id],
+        backref="children",
+    )
+
+
+    __table_args__ = (
+        UniqueConstraint("master_id", "parent_id", "name"),
+    )
+
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+
+    master_id = Column(
+        BigInteger,
+        ForeignKey("master.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+    category_id = Column(
+        Integer,
+        ForeignKey("expense_categories.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+
+    resale_deal_id = Column(
+        BigInteger,
+        ForeignKey("resale_deals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+
+    amount = Column(Numeric(12, 2), nullable=False)
+    description = Column(Text, nullable=True)
+    spent_at = Column(DateTime(timezone=True), nullable=False)
+
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+
+    category = relationship("ExpenseCategory")
+    resale_deal = relationship("ResaleDeal")
+
+
+
+class ResaleDeal(Base):
+    __tablename__ = "resale_deals"
+
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+
+    master_id = Column(
+        BigInteger,
+        ForeignKey("master.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+    title = Column(String(255), nullable=False)
+    status = Column(String(32), default="purchased", nullable=False)
+
+
+    purchase_amount = Column(Numeric(12, 2), default=0, nullable=False)
+    sale_amount = Column(Numeric(12, 2), default=0, nullable=False)
+
+
+    purchased_at = Column(DateTime(timezone=True), nullable=True)
+    sold_at = Column(DateTime(timezone=True), nullable=True)
+
+
+    notes = Column(Text, nullable=True)
+
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+    parts = relationship(
+        "ResaleDealPart",
+        back_populates="deal",
+        cascade="all, delete-orphan",
+    )
+
+
+
+class ResaleDealPart(Base):
+    __tablename__ = "resale_deal_parts"
+
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+
+    deal_id = Column(
+        BigInteger,
+        ForeignKey("resale_deals.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+    part_id = Column(
+        BigInteger,
+        ForeignKey("part.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+
+    batch_id = Column(
+        BigInteger,
+        ForeignKey("part_batch.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+
+    quantity = Column(Integer, nullable=False)
+    unit_cost = Column(Numeric(12, 2), nullable=False)
+    total_cost = Column(Numeric(12, 2), nullable=False)
+
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+
+    deal = relationship("ResaleDeal", back_populates="parts")
+    part = relationship("Part")
+    batch = relationship("PartBatch")
