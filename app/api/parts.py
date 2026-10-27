@@ -43,6 +43,7 @@ class PartOut(BaseModel):
     id: int
     category: str
     name: str
+    item_type: str
     quantity: int
     purchase_price: Optional[float] = None
     is_active: bool
@@ -76,6 +77,7 @@ class PartDetailOut(PartOut):
 class PartCreate(BaseModel):
     category: str
     name: str
+    item_type: str = "part"
     quantity: int
     purchase_price: float
     supplier_id: Optional[int] = None
@@ -147,6 +149,7 @@ def serialize_part(part: Part) -> dict:
         "id": part.id,
         "category": part.category,
         "name": part.name,
+        "item_type": part.item_type,
         "quantity": total_quantity,
         "purchase_price": (
             float(available_batches[0].purchase_price)
@@ -418,6 +421,13 @@ async def create_part(
     db: AsyncSession = Depends(get_db),
     current_master: Master = Depends(get_current_master),
 ):
+    if payload.item_type not in {"part", "resale_item"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Некорректный тип позиции"
+        )
+
+
     if payload.quantity <= 0:
         raise HTTPException(
             status_code=400,
@@ -436,6 +446,7 @@ async def create_part(
         master_id=current_master.id,
         category=payload.category.strip(),
         name=payload.name.strip(),
+        item_type=payload.item_type,
     )
 
 

@@ -435,6 +435,7 @@ class Supplier(Base):
 class Part(Base):
     __tablename__ = "part"
 
+
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     master_id = Column(
         BigInteger,
@@ -443,17 +444,16 @@ class Part(Base):
         index=True,
     )
 
+
     category = Column(String(100), nullable=False)
     name = Column(Text, nullable=False)
+    item_type = Column(String(32), nullable=False, default="part")
+
 
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-        nullable=False,
-    )
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
 
     master = relationship("Master", back_populates="parts")
     batches = relationship(
@@ -462,7 +462,6 @@ class Part(Base):
         cascade="all, delete-orphan",
         order_by="PartBatch.purchased_at",
     )
-
 
 class PartBatch(Base):
     __tablename__ = "part_batch"
@@ -747,6 +746,15 @@ class ResaleDeal(Base):
         cascade="all, delete-orphan",
     )
 
+    resale_item_id = Column(
+    BigInteger,
+    ForeignKey("part.id", ondelete="SET NULL"),
+    nullable=True,
+    index=True,
+)
+
+
+    resale_item = relationship("Part")
 
 
 class ResaleDealPart(Base):

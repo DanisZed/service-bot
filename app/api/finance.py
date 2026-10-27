@@ -68,7 +68,7 @@ class ExpenseOut(BaseModel):
 
 class ResaleDealCreate(BaseModel):
     title: str
-    purchase_amount: float = 0
+    resale_item_id: int
     notes: Optional[str] = None
 
 
@@ -96,7 +96,9 @@ class ResaleDealOut(BaseModel):
     id: int
     title: str
     status: str
-    purchase_amount: float
+    resale_item_id: Optional[int] = None
+    resale_item_name: Optional[str] = None
+    item_cost: float
     sale_amount: float
     parts_cost: float
     expenses_cost: float
@@ -462,13 +464,21 @@ def serialize_deal(deal: ResaleDeal, expenses_total: Decimal) -> dict:
     )
 
 
-    total_cost = (
-        deal.purchase_amount
-        + parts_cost
-        + expenses_total
-    )
+    item_cost = Decimal("0")
 
 
+    if deal.resale_item:
+        item_batches = deal.resale_item.batches
+
+
+        item_cost = sum(
+            batch.purchase_price * batch.quantity_initial
+            for batch in item_batches
+            if batch.quantity_remaining == 0
+        )
+
+
+    total_cost = item_cost + parts_cost + expenses_total
     profit = deal.sale_amount - total_cost
 
 
@@ -476,7 +486,11 @@ def serialize_deal(deal: ResaleDeal, expenses_total: Decimal) -> dict:
         "id": deal.id,
         "title": deal.title,
         "status": deal.status,
-        "purchase_amount": float(deal.purchase_amount),
+        "resale_item_id": deal.resale_item_id,
+        "resale_item_name": (
+            deal.resale_item.name if deal.resale_item else None
+        ),
+        "item_cost": float(item_cost),
         "sale_amount": float(deal.sale_amount),
         "parts_cost": float(parts_cost),
         "expenses_cost": float(expenses_total),
@@ -497,7 +511,6 @@ def serialize_deal(deal: ResaleDeal, expenses_total: Decimal) -> dict:
             for item in deal.parts
         ],
     }
-
 
 
 async def get_deal_expenses_total(
@@ -561,26 +574,74 @@ async def create_resale_deal(
         )
 
 
+    item_result = await db.execute(
+        select(Part)
+        .options(selectinload(Part.batches))
+        .where(
+            Part.id == payload.resale_item_id,
+            Part.master_id == current_master.id,
+            Part.item_type == "resale_item",
+        )
+    )
+    resale_item = item_result.scalar_one_or_none()
+
+
+    if not resale_item:
+        raise HTTPException(
+            status_code=404,
+            detail="Товар для перепродажи не найден"
+        )
+
+
+    available_quantity = sum(
+        batch.quantity_remaining for batch in resale_item.batches
+    )
+
+
+    if available_quantity < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Товара нет в наличии"
+        )
+
+
     deal = ResaleDeal(
         master_id=current_master.id,
         title=title,
         status="purchased",
-        purchase_amount=Decimal(str(payload.purchase_amount)),
+        resale_item_id=resale_item.id,
         purchased_at=datetime.utcnow(),
         notes=payload.notes,
     )
 
 
     db.add(deal)
+    await db.flush()
+
+
+    batch = next(
+        (
+            batch
+            for batch in resale_item.batches
+            if batch.quantity_remaining > 0
+        ),
+        None,
+    )
+
+
+    if batch:
+        batch.quantity_remaining -= 1
+
+
     await db.commit()
     await db.refresh(deal)
 
 
+    deal = await get_owned_deal(deal.id, current_master, db)
     expenses_total = await get_deal_expenses_total(deal.id, db)
 
 
     return serialize_deal(deal, expenses_total)
-
 
 
 @router.get("/resale-deals/{deal_id}", response_model=ResaleDealOut)
@@ -665,6 +726,25 @@ async def delete_resale_deal(
     current_master: Master = Depends(get_current_master),
 ):
     deal = await get_owned_deal(deal_id, current_master, db)
+
+
+    if deal.resale_item:
+        item_result = await db.execute(
+            select(Part)
+            .options(selectinload(Part.batches))
+            .where(Part.id == deal.resale_item_id)
+        )
+        resale_item = item_result.scalar_one_or_none()
+
+
+        if resale_item and resale_item.batches:
+            batch = resale_item.batches[0]
+            batch.quantity_remaining += 1
+
+
+    for item in deal.parts:
+        if item.batch:
+            item.batch.quantity_remaining += item.quantity
 
 
     await db.delete(deal)
