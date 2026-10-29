@@ -39,6 +39,10 @@ MINIAPP_BASE_URL = os.getenv("MINIAPP_BASE_URL", "https://max.rbt-crm.ru")
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 logger = logging.getLogger(__name__)
 logger.info("MAIN DEBUG PANEL_BASE_URL=%s MINIAPP_BASE_URL=%s", PANEL_BASE_URL, MINIAPP_BASE_URL)
