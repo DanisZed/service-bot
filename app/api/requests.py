@@ -129,6 +129,7 @@ class ServiceRequestUpdate(BaseModel):
     status: Optional[str] = None
     master_id: Optional[int] = None
     assigned_master_id: Optional[int] = None
+    client_name: Optional[str] = None
 
 
 
@@ -835,6 +836,10 @@ async def update_service_request(
         else:
             obj.dispatcher_fee_amount = None
 
+
+    # --- Клиент ---
+    if "client_name" in provided_fields:
+        obj.client_name = payload.client_name
 
 
     # --- Прочие поля ---
