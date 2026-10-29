@@ -915,4 +915,10 @@ async def get_request_sticker(
 
 
 
-    return Response(content=img_bytes, media_type="image/png")
+    return Response(
+        content=img_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="warranty-{request_id}.pdf"'
+        },
+    )

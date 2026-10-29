@@ -15,6 +15,7 @@
             font-size: 8pt;
         }
 
+
         .label {
             width: 100%;
             height: 100%;
@@ -25,7 +26,7 @@
             padding: 2mm 2mm 1.5mm 2mm;
         }
 
-        /* Шапка сервиса / мастера */
+
         .header {
             padding-bottom: 1mm;
             margin-bottom: 1mm;
@@ -41,7 +42,7 @@
             margin-top: 0.5mm;
         }
 
-        /* Основной блок */
+
         .content {
             flex: 1 1 auto;
             display: flex;
@@ -52,6 +53,7 @@
             border-bottom: 0.2mm solid #000;
         }
 
+
         .title {
             font-size: 8pt;
             font-weight: bold;
@@ -59,16 +61,32 @@
             margin-bottom: 1mm;
         }
 
+
         .number-date {
             font-size: 8pt;
             font-weight: bold;
             margin-bottom: 1.2mm;
         }
 
+
         .master-line {
             font-size: 8pt;
-            margin-bottom: 2mm;
+            margin-bottom: 0.8mm;
         }
+
+
+        .dispatcher-line {
+            font-size: 7pt;
+            color: #444444;
+            margin-bottom: 1mm;
+        }
+
+
+        .visit-line {
+            font-size: 7pt;
+            margin-bottom: 1mm;
+        }
+
 
         .qr-container {
             margin-top: 0.5mm;
@@ -78,13 +96,14 @@
             height: auto;
         }
 
+
         .qr-hint {
             font-size: 6pt;
             margin-top: 1mm;
             max-width: 40mm;
         }
 
-        /* Футер с сайтом (покрупнее) */
+
         .footer {
             font-size: 7pt;
             font-weight: bold;
@@ -95,12 +114,14 @@
 </head>
 <body>
 <div class="label">
-    {% if service_name %}
+    {% if has_service %}
         <div class="header">
             <div class="service-name">{{ service_name }}</div>
+
             {% if service_address %}
                 <div class="service-extra">{{ service_address }}</div>
             {% endif %}
+
             {% if service_phone %}
                 <div class="service-extra">☎ {{ service_phone }}</div>
             {% endif %}
@@ -108,35 +129,58 @@
     {% else %}
         <div class="header">
             <div class="service-name">{{ master_full_name }}</div>
+
             {% if master_phone %}
                 <div class="service-extra">☎ {{ master_phone }}</div>
             {% endif %}
         </div>
     {% endif %}
 
+
     <div class="content">
         <div class="title">ГАРАНТИЙНЫЙ ТАЛОН</div>
+
 
         <div class="number-date">
             №{{ request_id }} от {{ created_at }}
         </div>
 
+
         <div class="master-line">Мастер: {{ master_full_name }}</div>
+
+
+        {% if dispatcher_full_name %}
+            <div class="dispatcher-line">
+                Диспетчер: {{ dispatcher_full_name }}
+            </div>
+        {% endif %}
+
+
+        {% if visit_date or visit_time %}
+            <div class="visit-line">
+                {% if visit_date %}{{ visit_date }}{% endif %}
+                {% if visit_date and visit_time %} | {% endif %}
+                {% if visit_time %}{{ visit_time }}{% endif %}
+            </div>
+        {% endif %}
+
 
         <div class="qr-container">
             <img src="{{ qr_url }}" alt="QR-код">
         </div>
+
 
         <div class="qr-hint">
             Наведите камеру телефона, чтобы узнать подробности по вашему ремонту
         </div>
     </div>
 
+
     <div class="footer">
         {% if service_website %}
             {{ service_website }}
         {% else %}
-            www.master-rbt-crm.ru
+            <a href="https://rbt-crm.ru" style="color: inherit; text-decoration: none;">www.master-rbt-crm.ru</a>
         {% endif %}
     </div>
 </div>
