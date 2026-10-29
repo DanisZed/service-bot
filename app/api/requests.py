@@ -289,6 +289,66 @@ async def list_requests(
     return rows
 
 
+@router.get("/slots")
+async def get_available_slots(
+    date: str,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    """
+    Возвращает временные слоты мастера на дату.
+    Занятыми считаются слоты заявок со статусами new, in_work и confirmed.
+    """
+    try:
+        target_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Некорректная дата. Используйте формат YYYY-MM-DD.",
+        )
+
+    time_slots = [
+        ("09:00", "10:00"),
+        ("10:00", "11:00"),
+        ("11:00", "12:00"),
+        ("12:00", "13:00"),
+        ("13:00", "14:00"),
+        ("14:00", "15:00"),
+        ("15:00", "16:00"),
+        ("16:00", "17:00"),
+        ("17:00", "18:00"),
+    ]
+
+    result = await db.execute(
+        select(ServiceRequest.time_slot).where(
+            ServiceRequest.master_id == current_master.id,
+            ServiceRequest.date_iso == target_date,
+            ServiceRequest.status.in_(["new", "in_work", "confirmed"]),
+        )
+    )
+
+    booked_slots = {
+        row[0]
+        for row in result
+        if row[0]
+    }
+
+    slots = [
+        {
+            "time_slot": f"{start}-{end}",
+            "is_booked": f"{start}-{end}" in booked_slots,
+        }
+        for start, end in time_slots
+    ]
+
+    return {
+        "date": date,
+        "master_id": current_master.id,
+        "slots": slots,
+    }
+
+
+
 @router.get("/{request_id}", response_model=ServiceRequestOut)
 async def get_request(
     request_id: int,
