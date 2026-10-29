@@ -5,16 +5,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+
 from app.db.session import get_session
 from app.db.models import Master, ServiceCenter
 from app.api.deps import get_current_master
+
 
 
 router = APIRouter(prefix="/api/masters", tags=["masters"])
 
 
 
+
 # ========== СХЕМЫ ==========
+
 
 
 class MasterOut(BaseModel):
@@ -31,8 +35,10 @@ class MasterOut(BaseModel):
 
 
 
+
 class UpdatePhoneRequest(BaseModel):
     phone: str
+
 
 
 
@@ -41,9 +47,11 @@ class UpdateDispatcherSettingsRequest(BaseModel):
 
 
 
+
 class ClearServiceResponse(BaseModel):
     success: bool
     message: str
+
 
 
 
@@ -54,10 +62,13 @@ class LinkedMasterOut(BaseModel):
     lastname: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    dispatcher_commission_percent: Optional[float] = None
+
 
 
 
 # ========== ЭНДПОИНТЫ ==========
+
 
 
 @router.get("/me")
@@ -71,9 +82,11 @@ async def get_current_master_info(
     service_name = None
 
 
+
     if current_master.service_center:
         service_id = current_master.service_center.service_id
         service_name = current_master.service_center.service_name
+
 
 
     return {
@@ -93,6 +106,7 @@ async def get_current_master_info(
             else None
         ),
     }
+
 
 
 
@@ -116,13 +130,16 @@ async def update_dispatcher_settings(
             )
 
 
+
     current_master.dispatcher_commission_percent = (
         payload.dispatcher_commission_percent
     )
 
 
+
     await db.commit()
     await db.refresh(current_master)
+
 
 
     return {
@@ -133,6 +150,135 @@ async def update_dispatcher_settings(
             else None
         ),
     }
+
+
+
+
+@router.get("/center", response_model=List[LinkedMasterOut])
+async def get_center_masters(
+    current_master: Master = Depends(get_current_master),
+    db: AsyncSession = Depends(get_session),
+):
+    """
+    Возвращает мастеров сервис-центра текущего пользователя.
+    Доступно администратору сервис-центра.
+    """
+    if current_master.is_admin != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Только диспетчер может просматривать мастеров центра",
+        )
+
+
+
+    if not current_master.service_center_id:
+        return []
+
+
+
+    result = await db.execute(
+        select(Master).where(
+            Master.service_center_id == current_master.service_center_id,
+            Master.is_active == 1,
+        )
+    )
+    masters = result.scalars().all()
+
+
+
+    return [
+        LinkedMasterOut(
+            id=m.id,
+            master_id=m.master_id,
+            name=m.name,
+            lastname=m.lastname,
+            phone=m.phone,
+            email=m.email,
+            dispatcher_commission_percent=(
+                float(m.dispatcher_commission_percent)
+                if m.dispatcher_commission_percent is not None
+                else None
+            ),
+        )
+        for m in masters
+    ]
+
+
+
+
+@router.patch("/{master_id}/dispatcher-settings")
+async def update_master_dispatcher_settings(
+    master_id: int,
+    payload: UpdateDispatcherSettingsRequest,
+    current_master: Master = Depends(get_current_master),
+    db: AsyncSession = Depends(get_session),
+):
+    """
+    Обновляет процент диспетчера для указанного мастера.
+    Доступно администратору того же сервис-центра.
+    """
+    if current_master.is_admin != 1:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Только диспетчер может изменять процент мастера",
+        )
+
+
+
+    target_master = await db.get(Master, master_id)
+
+
+
+    if not target_master:
+        raise HTTPException(status_code=404, detail="Мастер не найден")
+
+
+
+    if (
+        not current_master.service_center_id
+        or target_master.service_center_id
+        != current_master.service_center_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Мастер не принадлежит вашему сервисному центру",
+        )
+
+
+
+    if payload.dispatcher_commission_percent is not None:
+        if (
+            payload.dispatcher_commission_percent < 0
+            or payload.dispatcher_commission_percent > 100
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Процент должен быть от 0 до 100",
+            )
+
+
+
+    target_master.dispatcher_commission_percent = (
+        payload.dispatcher_commission_percent
+    )
+
+
+
+    await db.commit()
+    await db.refresh(target_master)
+
+
+
+    return {
+        "success": True,
+        "master_id": target_master.id,
+        "dispatcher_commission_percent": (
+            float(target_master.dispatcher_commission_percent)
+            if target_master.dispatcher_commission_percent is not None
+            else None
+        ),
+    }
+
 
 
 
@@ -154,14 +300,17 @@ async def update_master_phone(
         )
 
 
+
     result = await db.execute(
         select(Master).where(Master.id == master_id)
     )
     target_master = result.scalar_one_or_none()
 
 
+
     if not target_master:
         raise HTTPException(status_code=404, detail="Мастер не найден")
+
 
 
     target_master.phone = request.phone
@@ -169,11 +318,13 @@ async def update_master_phone(
     await db.refresh(target_master)
 
 
+
     return {
         "success": True,
         "phone": target_master.phone,
         "master_id": target_master.master_id,
     }
+
 
 
 
@@ -194,14 +345,17 @@ async def clear_master_service(
         )
 
 
+
     result = await db.execute(
         select(Master).where(Master.id == master_id)
     )
     target_master = result.scalar_one_or_none()
 
 
+
     if not target_master:
         raise HTTPException(status_code=404, detail="Мастер не найден")
+
 
 
     if (
@@ -215,14 +369,17 @@ async def clear_master_service(
         )
 
 
+
     target_master.service_center_id = None
     await db.commit()
+
 
 
     return ClearServiceResponse(
         success=True,
         message="Мастер отвязан от сервисного центра",
     )
+
 
 
 
@@ -243,6 +400,7 @@ async def get_masters_by_service(
         )
 
 
+
     sc_result = await db.execute(
         select(ServiceCenter).where(
             ServiceCenter.service_id == service_id
@@ -251,11 +409,13 @@ async def get_masters_by_service(
     service_center = sc_result.scalar_one_or_none()
 
 
+
     if not service_center:
         raise HTTPException(
             status_code=404,
             detail="Сервисный центр не найден",
         )
+
 
 
     if (
@@ -268,6 +428,7 @@ async def get_masters_by_service(
         )
 
 
+
     result = await db.execute(
         select(Master).where(
             Master.service_center_id == service_center.id,
@@ -275,6 +436,7 @@ async def get_masters_by_service(
         )
     )
     masters = result.scalars().all()
+
 
 
     return [
@@ -285,6 +447,11 @@ async def get_masters_by_service(
             lastname=m.lastname,
             phone=m.phone,
             email=m.email,
+            dispatcher_commission_percent=(
+                float(m.dispatcher_commission_percent)
+                if m.dispatcher_commission_percent is not None
+                else None
+            ),
         )
         for m in masters
     ]
