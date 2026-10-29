@@ -1,11 +1,10 @@
-# app/services/requests.py
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import func, select
-from app.db.models import ServiceRequest
+from app.db.models import Master, ServiceRequest
 from app.services.notifications import schedule_visit_reminders
 
 
@@ -20,7 +19,7 @@ def parse_visit_datetimes(
 
     В:
         datetime_from = 2026-10-17 11:00:00
-        datetime_to   = 2026-10-17 12:00:00
+        datetime_to = 2026-10-17 12:00:00
 
     Если дату или слот распознать нельзя — возвращает (None, None).
     """
@@ -80,17 +79,20 @@ async def create_service_request(
         "problem_description",
         "location_type",
     ]
+
     missing = [
         field
         for field in required_fields
         if field not in data or data[field] is None
     ]
+
     if missing:
         raise ValueError(
             f"Missing required fields for ServiceRequest: {', '.join(missing)}"
         )
 
     raw_date_iso = data.get("date_iso")
+
     if isinstance(raw_date_iso, str):
         try:
             data["date_iso"] = datetime.strptime(raw_date_iso, "%Y-%m-%d").date()
@@ -111,18 +113,55 @@ async def create_service_request(
         datetime_to = datetime_to or parsed_to
 
     master_id = data.get("master_id")
+    assigned_master_id = data.get("assigned_master_id") or master_id
+    service_center_id = data.get("service_center_id")
 
     next_seq: Optional[int] = None
-    if master_id is not None:
+
+    if service_center_id:
+        # Единая нумерация внутри сервисного центра.
         result = await session.execute(
             select(
                 func.coalesce(
                     func.max(ServiceRequest.master_seq),
                     0,
                 )
-            ).where(ServiceRequest.master_id == master_id)
+            ).where(
+                ServiceRequest.service_center_id == service_center_id
+            )
         )
         next_seq = result.scalar_one() + 1
+
+    elif master_id is not None:
+        # Личная нумерация мастера-одиночки.
+        result = await session.execute(
+            select(
+                func.coalesce(
+                    func.max(ServiceRequest.master_seq),
+                    0,
+                )
+            ).where(
+                ServiceRequest.master_id == master_id
+            )
+        )
+        next_seq = result.scalar_one() + 1
+
+    # Заявка передана диспетчером, если создатель и исполнитель разные.
+    is_from_dispatcher = bool(
+        master_id
+        and assigned_master_id
+        and master_id != assigned_master_id
+    )
+
+    dispatcher_commission_percent = None
+
+    if is_from_dispatcher and assigned_master_id:
+        assigned_master = await session.get(Master, assigned_master_id)
+
+        if assigned_master:
+            dispatcher_commission_percent = (
+                assigned_master.dispatcher_commission_percent
+            )
 
     obj = ServiceRequest(
         status="new",
@@ -131,8 +170,11 @@ async def create_service_request(
         user_external_id=data["user_id"],
         chat_external_id=data["chat_id"],
         master_id=master_id,
+        assigned_master_id=assigned_master_id,
         master_seq=next_seq,
-        assigned_master_id=data.get("assigned_master_id"),
+        service_center_id=service_center_id,
+        is_from_dispatcher=is_from_dispatcher,
+        dispatcher_commission_percent=dispatcher_commission_percent,
         client_id=data.get("client_id"),
         client_name=data.get("client_name"),
         client_phone=data.get("client_phone"),

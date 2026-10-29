@@ -1,17 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
-from sqlalchemy import select
+
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
 
 from app.db.session import get_session
 from app.db.models import DeviceCategory, DeviceSubtype, Master
 from app.api.deps import get_current_master
 
+
 router = APIRouter(prefix="/api/device-categories", tags=["device_categories"])
 
+
 # ==================== СХЕМЫ ====================
+
 
 class DeviceSubtypeOut(BaseModel):
     id: int
@@ -22,8 +27,10 @@ class DeviceSubtypeOut(BaseModel):
     sort_order: int
     is_active: bool
 
+
     class Config:
         from_attributes = True
+
 
 class DeviceCategoryOut(BaseModel):
     id: int
@@ -31,21 +38,25 @@ class DeviceCategoryOut(BaseModel):
     description: Optional[str] = None
     sort_order: int
     is_active: bool
-    subtypes: List[DeviceSubtypeOut] = []   # подкатегории будут здесь
+    subtypes: List[DeviceSubtypeOut] = []
+
 
     class Config:
         from_attributes = True
+
 
 class DeviceCategoryCreate(BaseModel):
     name: str
     description: Optional[str] = None
     sort_order: int = 0
 
+
 class DeviceCategoryUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
+
 
 class DeviceSubtypeCreate(BaseModel):
     category_id: int
@@ -56,6 +67,7 @@ class DeviceSubtypeCreate(BaseModel):
     sort_order: int = 0
     is_active: bool = True
 
+
 class DeviceSubtypeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
@@ -64,7 +76,53 @@ class DeviceSubtypeUpdate(BaseModel):
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
 
+
+# ==================== ПРАВА ДОСТУПА ====================
+
+
+def get_category_filters(current_master: Master):
+    """
+    Возвращает условие доступа к категориям:
+    - категории сервис-центра пользователя;
+    - личные категории мастера.
+    """
+    filters = [
+        DeviceCategory.master_id == current_master.id,
+    ]
+
+
+    if current_master.service_center_id:
+        filters.append(
+            DeviceCategory.service_center_id == current_master.service_center_id
+        )
+
+
+    return or_(*filters)
+
+
+
+def can_edit_category(
+    category: DeviceCategory,
+    current_master: Master,
+) -> bool:
+    if category.master_id == current_master.id:
+        return True
+
+
+    if (
+        current_master.is_admin == 1
+        and current_master.service_center_id is not None
+        and category.service_center_id == current_master.service_center_id
+    ):
+        return True
+
+
+    return False
+
+
+
 # ==================== КАТЕГОРИИ ====================
+
 
 @router.get("", response_model=List[DeviceCategoryOut])
 async def get_categories(
@@ -74,15 +132,21 @@ async def get_categories(
     query = (
         select(DeviceCategory)
         .where(
-            DeviceCategory.master_id == current_master.id,
-            DeviceCategory.is_active == True
+            get_category_filters(current_master),
+            DeviceCategory.is_active == True,
         )
         .order_by(DeviceCategory.sort_order, DeviceCategory.name)
         .options(selectinload(DeviceCategory.subtypes))
     )
+
+
     result = await db.execute(query)
     categories = result.unique().scalars().all()
+
+
     return categories
+
+
 
 @router.post("", response_model=DeviceCategoryOut, status_code=status.HTTP_201_CREATED)
 async def create_category(
@@ -90,25 +154,56 @@ async def create_category(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
+    if current_master.service_center_id:
+        uniqueness_filters = [
+            DeviceCategory.service_center_id == current_master.service_center_id,
+            DeviceCategory.name == payload.name,
+        ]
+    else:
+        uniqueness_filters = [
+            DeviceCategory.master_id == current_master.id,
+            DeviceCategory.name == payload.name,
+        ]
+
+
+    existing = await db.execute(
+        select(DeviceCategory).where(*uniqueness_filters)
+    )
+
+
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "Категория с таким названием уже существует")
+
+
     category = DeviceCategory(
         name=payload.name,
         description=payload.description,
         sort_order=payload.sort_order,
         is_active=True,
-        master_id=current_master.id,
+        service_center_id=current_master.service_center_id,
+        master_id=(
+            None
+            if current_master.service_center_id
+            else current_master.id
+        ),
     )
+
+
     db.add(category)
     await db.commit()
     await db.refresh(category)
-    # У новой категории подкатегорий пока нет
+
+
     return DeviceCategoryOut(
         id=category.id,
         name=category.name,
         description=category.description,
         sort_order=category.sort_order,
         is_active=category.is_active,
-        subtypes=[]
+        subtypes=[],
     )
+
+
 
 @router.patch("/{category_id}", response_model=DeviceCategoryOut)
 async def update_category(
@@ -117,32 +212,78 @@ async def update_category(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    result = await db.execute(select(DeviceCategory).where(DeviceCategory.id == category_id))
+    result = await db.execute(
+        select(DeviceCategory).where(DeviceCategory.id == category_id)
+    )
     category = result.scalar_one_or_none()
+
+
     if not category:
         raise HTTPException(404, "Категория не найдена")
-    if category.master_id != current_master.id:
+
+
+    if not can_edit_category(category, current_master):
         raise HTTPException(403, "Нет прав на редактирование")
+
+
     if payload.name is not None:
+        if category.service_center_id:
+            uniqueness_filters = [
+                DeviceCategory.service_center_id == category.service_center_id,
+                DeviceCategory.name == payload.name,
+                DeviceCategory.id != category_id,
+            ]
+        else:
+            uniqueness_filters = [
+                DeviceCategory.master_id == category.master_id,
+                DeviceCategory.name == payload.name,
+                DeviceCategory.id != category_id,
+            ]
+
+
+        existing = await db.execute(
+            select(DeviceCategory).where(*uniqueness_filters)
+        )
+
+
+        if existing.scalar_one_or_none():
+            raise HTTPException(400, "Категория с таким названием уже существует")
+
+
         category.name = payload.name
+
+
     if payload.description is not None:
         category.description = payload.description
+
+
     if payload.sort_order is not None:
         category.sort_order = payload.sort_order
+
+
     if payload.is_active is not None:
         category.is_active = payload.is_active
+
+
     await db.commit()
     await db.refresh(category)
-    # Подгружаем подкатегории для ответа
     await db.refresh(category, attribute_names=["subtypes"])
+
+
     return DeviceCategoryOut(
         id=category.id,
         name=category.name,
         description=category.description,
         sort_order=category.sort_order,
         is_active=category.is_active,
-        subtypes=[DeviceSubtypeOut.model_validate(s) for s in category.subtypes if s.is_active]
+        subtypes=[
+            DeviceSubtypeOut.model_validate(subtype)
+            for subtype in category.subtypes
+            if subtype.is_active
+        ],
     )
+
+
 
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category(
@@ -150,17 +291,28 @@ async def delete_category(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    result = await db.execute(select(DeviceCategory).where(DeviceCategory.id == category_id))
+    result = await db.execute(
+        select(DeviceCategory).where(DeviceCategory.id == category_id)
+    )
     category = result.scalar_one_or_none()
+
+
     if not category:
         raise HTTPException(404, "Категория не найдена")
-    if category.master_id != current_master.id:
+
+
+    if not can_edit_category(category, current_master):
         raise HTTPException(403, "Нет прав на удаление")
+
+
     await db.delete(category)
     await db.commit()
     return
 
+
+
 # ==================== ПОДКАТЕГОРИИ ====================
+
 
 @router.post("/subtypes", response_model=DeviceSubtypeOut, status_code=status.HTTP_201_CREATED)
 async def create_subtype(
@@ -168,25 +320,60 @@ async def create_subtype(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    # Проверяем категорию
-    result = await db.execute(select(DeviceCategory).where(DeviceCategory.id == payload.category_id))
+    result = await db.execute(
+        select(DeviceCategory).where(DeviceCategory.id == payload.category_id)
+    )
     category = result.scalar_one_or_none()
-    if not category or category.master_id != current_master.id:
+
+
+    if not category or not can_edit_category(category, current_master):
         raise HTTPException(403, "Категория не найдена или нет прав")
+
+
+    if category.service_center_id:
+        uniqueness_filters = [
+            DeviceSubtype.service_center_id == category.service_center_id,
+            DeviceSubtype.category_id == category.id,
+            DeviceSubtype.name == payload.name,
+        ]
+    else:
+        uniqueness_filters = [
+            DeviceSubtype.master_id == category.master_id,
+            DeviceSubtype.category_id == category.id,
+            DeviceSubtype.name == payload.name,
+        ]
+
+
+    existing = await db.execute(
+        select(DeviceSubtype).where(*uniqueness_filters)
+    )
+
+
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "Подкатегория с таким названием уже существует")
+
+
     subtype = DeviceSubtype(
-        category_id=payload.category_id,
+        category_id=category.id,
         name=payload.name,
         description=payload.description,
         price=payload.price,
         duration_minutes=payload.duration_minutes,
         sort_order=payload.sort_order,
         is_active=payload.is_active,
-        master_id=current_master.id,
+        service_center_id=category.service_center_id,
+        master_id=category.master_id,
     )
+
+
     db.add(subtype)
     await db.commit()
     await db.refresh(subtype)
+
+
     return subtype
+
+
 
 @router.patch("/subtypes/{subtype_id}", response_model=DeviceSubtypeOut)
 async def update_subtype(
@@ -195,15 +382,37 @@ async def update_subtype(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    result = await db.execute(select(DeviceSubtype).where(DeviceSubtype.id == subtype_id))
+    result = await db.execute(
+        select(DeviceSubtype).where(DeviceSubtype.id == subtype_id)
+    )
     subtype = result.scalar_one_or_none()
-    if not subtype or subtype.master_id != current_master.id:
-        raise HTTPException(403, "Подкатегория не найдена или нет прав")
+
+
+    if not subtype:
+        raise HTTPException(404, "Подкатегория не найдена")
+
+
+    category_result = await db.execute(
+        select(DeviceCategory).where(DeviceCategory.id == subtype.category_id)
+    )
+    category = category_result.scalar_one_or_none()
+
+
+    if not category or not can_edit_category(category, current_master):
+        raise HTTPException(403, "Нет прав на редактирование")
+
+
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(subtype, field, value)
+
+
     await db.commit()
     await db.refresh(subtype)
+
+
     return subtype
+
+
 
 @router.delete("/subtypes/{subtype_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_subtype(
@@ -211,10 +420,26 @@ async def delete_subtype(
     db: AsyncSession = Depends(get_session),
     current_master: Master = Depends(get_current_master),
 ):
-    result = await db.execute(select(DeviceSubtype).where(DeviceSubtype.id == subtype_id))
+    result = await db.execute(
+        select(DeviceSubtype).where(DeviceSubtype.id == subtype_id)
+    )
     subtype = result.scalar_one_or_none()
-    if not subtype or subtype.master_id != current_master.id:
-        raise HTTPException(403, "Подкатегория не найдена или нет прав")
+
+
+    if not subtype:
+        raise HTTPException(404, "Подкатегория не найдена")
+
+
+    category_result = await db.execute(
+        select(DeviceCategory).where(DeviceCategory.id == subtype.category_id)
+    )
+    category = category_result.scalar_one_or_none()
+
+
+    if not category or not can_edit_category(category, current_master):
+        raise HTTPException(403, "Нет прав на удаление")
+
+
     await db.delete(subtype)
     await db.commit()
     return

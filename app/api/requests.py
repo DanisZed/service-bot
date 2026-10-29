@@ -27,19 +27,31 @@ router = APIRouter(prefix="/api/requests", tags=["requests"])
 class ServiceRequestOut(BaseModel):
     id: int
 
+
     # Время создания и статус заявки
     created_at: datetime
     status: str
 
-    # Привязка к мастеру
+
+    # Владелец и исполнитель
     master_id: Optional[int] = None
     master_seq: int | None = None
     assigned_master_id: Optional[int] = None
+    assigned_master_name: Optional[str] = None
+
+
+    # Сервисный центр и диспетчерская передача
+    service_center_id: Optional[int] = None
+    is_from_dispatcher: bool = False
+    dispatcher_commission_percent: Optional[float] = None
+    dispatcher_fee_amount: Optional[float] = None
+
 
     # Клиент
     client_id: Optional[int] = None
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
+
 
     # Техника и услуга
     main_category: str
@@ -47,10 +59,12 @@ class ServiceRequestOut(BaseModel):
     custom_device: Optional[str] = None
     service_title: Optional[str] = None
 
+
     # Адрес
     location_type: str
     address: Optional[str] = None
     address_details: Optional[str] = None
+
 
     # Описание поломки
     problem_description: str
@@ -58,19 +72,22 @@ class ServiceRequestOut(BaseModel):
     repair_description: Optional[str] = None
     warranty_period: Optional[int] = None
 
+
     # Дата/время выезда
     date_iso: Optional[date] = None
     time_slot: Optional[str] = None
     datetime_from: Optional[datetime] = None
     datetime_to: Optional[datetime] = None
 
+
     # Деньги
     total_amount: Optional[float] = None
-    parts_cost: Optional[float] = None   # ← добавить
+    parts_cost: Optional[float] = None
     currency: str
     payment_status: str
     paid_amount: Optional[float] = None
     paid_at: Optional[datetime] = None
+
 
     # Источник и внешние ссылки
     source: str
@@ -78,39 +95,39 @@ class ServiceRequestOut(BaseModel):
     lead_source_name: Optional[str] = None
     yandex_url: Optional[str] = None
     google_url: Optional[str] = None
-    
+
+
     # Даты статусов
-    done_at: Optional[datetime] = None      # ← ДОБАВИТЬ
-    cancelled_at: Optional[datetime] = None # ← ДОБАВИТЬ
-    in_work_at: Optional[datetime] = None   # ← ДОБАВИТЬ
+    done_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    in_work_at: Optional[datetime] = None
+
 
     class Config:
         from_attributes = True
 
 
 class ServiceRequestUpdate(BaseModel):
-    # Что можно редактировать из фронта
     status: Optional[str] = None
     master_id: Optional[int] = None
-    assigned_master_id: Optional[int] = None  
+    assigned_master_id: Optional[int] = None
 
 
-    # Финансовая часть (под CRM)
     total_amount: Optional[float] = None
     parts_cost: Optional[float] = None
     payment_status: Optional[str] = None
     paid_amount: Optional[float] = None
     paid_at: Optional[datetime] = None
-    
-    # Источник
+
+
     source: Optional[str] = None
-    
-    # Выполненные работы
+
+
     what_was_done: Optional[str] = None
     repair_description: Optional[str] = None
     warranty_period: Optional[int] = None
 
-    # Техника и услуга
+
     main_category: Optional[str] = None
     subtype: Optional[str] = None
     service_title: Optional[str] = None
@@ -119,7 +136,7 @@ class ServiceRequestUpdate(BaseModel):
 class CreateRequestFromWeb(BaseModel):
     problem_description: str
     location_type: str
-    master_id: Optional[int] = None           # если не указан, назначается текущему мастеру
+    master_id: Optional[int] = None
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     address: Optional[str] = None
@@ -141,19 +158,20 @@ class CreateRequestFromWeb(BaseModel):
 
 class WallboardRequestItem(BaseModel):
     id: int
-    master_seq: int                 # номер заявки для мастера
+    master_seq: int
     status: str
     created_at: datetime
 
-    # поля для табло
+
     client_name: Optional[str] = None
     client_phone: Optional[str] = None
     problem_description: Optional[str] = None
     subtype: Optional[str] = None
 
-    # мастер / назначенный мастер
+
     master_name: Optional[str] = None
     assigned_master_name: Optional[str] = None
+
 
     class Config:
         from_attributes = True
@@ -170,6 +188,28 @@ class WallboardResponse(BaseModel):
     meta: Optional[WallboardMeta] = None
 
 
+def has_request_access(
+    request: ServiceRequest,
+    current_master: Master,
+) -> bool:
+    """
+    Диспетчер сервис-центра видит все заявки своего центра.
+    Мастер видит свои заявки и заявки, назначенные ему.
+    """
+    has_center_access = (
+        current_master.is_admin == 1
+        and current_master.service_center_id is not None
+        and request.service_center_id == current_master.service_center_id
+    )
+
+    has_master_access = (
+        request.master_id == current_master.id
+        or request.assigned_master_id == current_master.id
+    )
+
+    return has_center_access or has_master_access
+
+
 @router.get("/wallboard", response_model=WallboardResponse)
 async def wallboard_requests(
     db: AsyncSession = Depends(get_db),
@@ -177,7 +217,7 @@ async def wallboard_requests(
 ):
     """
     Данные для инфотабло:
-    - новые заявки текущего мастера (в мастерской)
+    - новые заявки текущего мастера в мастерской
     - заявки в работе в мастерской
     """
     NEW_STATUSES = ("new", "assigned")
@@ -185,7 +225,7 @@ async def wallboard_requests(
     WORKSHOP_LOCATION = "workshop"
     WORKSHOP_ADDRESS = "Мастерская"
 
-    # --- новые заявки в мастерской ---
+
     stmt_new = (
         select(ServiceRequest)
         .where(
@@ -199,6 +239,7 @@ async def wallboard_requests(
     )
     res_new = await db.execute(stmt_new)
     rows_new = res_new.scalars().all()
+
 
     new_items: List[WallboardRequestItem] = []
     for r in rows_new:
@@ -219,7 +260,7 @@ async def wallboard_requests(
             )
         )
 
-    # --- в работе в мастерской ---
+
     stmt_in = (
         select(ServiceRequest)
         .where(
@@ -233,6 +274,7 @@ async def wallboard_requests(
     )
     res_in = await db.execute(stmt_in)
     rows_in = res_in.scalars().all()
+
 
     in_items: List[WallboardRequestItem] = []
     for r in rows_in:
@@ -253,17 +295,20 @@ async def wallboard_requests(
             )
         )
 
-    # тут реально достаём service_name и address
+
     service_name = None
     service_address = None
+
     if current_master.service_center:
         service_name = current_master.service_center.service_name
         service_address = current_master.service_center.address
 
+
     meta = WallboardMeta(
-      service_name=service_name,
-      address=service_address,
+        service_name=service_name,
+        address=service_address,
     )
+
 
     return WallboardResponse(new=new_items, in_work=in_items, meta=meta)
 
@@ -274,16 +319,28 @@ async def list_requests(
     db: AsyncSession = Depends(get_db),
     current_master=Depends(get_current_master),
 ):
-    stmt = (
-        select(ServiceRequest)
-        .where(
-            (ServiceRequest.master_id == current_master.id) |
-            (ServiceRequest.assigned_master_id == current_master.id)
+    stmt = select(ServiceRequest)
+
+
+    if current_master.is_admin == 1 and current_master.service_center_id:
+        # Диспетчер сервис-центра видит все заявки центра.
+        stmt = stmt.where(
+            ServiceRequest.service_center_id == current_master.service_center_id
         )
-        .order_by(ServiceRequest.id.desc())
-    )
+    else:
+        # Мастер видит свои заявки и заявки, назначенные ему.
+        stmt = stmt.where(
+            (ServiceRequest.master_id == current_master.id)
+            | (ServiceRequest.assigned_master_id == current_master.id)
+        )
+
+
     if status:
         stmt = stmt.where(ServiceRequest.status == status)
+
+
+    stmt = stmt.order_by(ServiceRequest.id.desc())
+
     result = await db.execute(stmt)
     rows = result.scalars().all()
     return rows
@@ -307,6 +364,7 @@ async def get_available_slots(
             detail="Некорректная дата. Используйте формат YYYY-MM-DD.",
         )
 
+
     time_slots = [
         ("09:00", "10:00"),
         ("10:00", "11:00"),
@@ -319,6 +377,7 @@ async def get_available_slots(
         ("17:00", "18:00"),
     ]
 
+
     result = await db.execute(
         select(ServiceRequest.time_slot).where(
             ServiceRequest.master_id == current_master.id,
@@ -327,11 +386,13 @@ async def get_available_slots(
         )
     )
 
+
     booked_slots = {
         row[0]
         for row in result
         if row[0]
     }
+
 
     slots = [
         {
@@ -341,12 +402,12 @@ async def get_available_slots(
         for start, end in time_slots
     ]
 
+
     return {
         "date": date,
         "master_id": current_master.id,
         "slots": slots,
     }
-
 
 
 @router.get("/{request_id}", response_model=ServiceRequestOut)
@@ -356,8 +417,12 @@ async def get_request(
     current_master=Depends(get_current_master),
 ):
     req = await db.get(ServiceRequest, request_id)
-    if not req or (req.master_id != current_master.id and req.assigned_master_id != current_master.id):
+
+
+    if not req or not has_request_access(req, current_master):
         raise HTTPException(status_code=404, detail="Not found")
+
+
     return req
 
 
@@ -368,18 +433,20 @@ async def create_request_from_web(
     current_master: Master = Depends(get_current_master),
 ):
     """
-    Создаёт заявку из веб-интерфейса (аналог бота).
-    Авторизация по JWT-куке. Если master_id не указан, заявка назначается текущему мастеру.
+    Создаёт заявку из веб-интерфейса.
+    Если master_id не указан, заявка назначается текущему мастеру.
     """
-    # Определяем исполнителя и владельца
     assigned_master_id = payload.master_id or current_master.id
     owner_master_id = current_master.id
+    service_center_id = current_master.service_center_id
+
 
     data = {
         "user_id": current_master.max_user_id,
         "chat_id": current_master.max_user_id,
         "master_id": owner_master_id,
         "assigned_master_id": assigned_master_id,
+        "service_center_id": service_center_id,
         "client_name": payload.client_name,
         "client_phone": payload.client_phone,
         "main_category": payload.main_category,
@@ -407,6 +474,7 @@ async def create_request_from_web(
         "meta": None,
     }
 
+
     req = await create_service_request(db, data)
     await notify_master_request_created(req.id)
     return req
@@ -419,71 +487,134 @@ async def update_service_request(
     db: AsyncSession = Depends(get_db),
     current_master=Depends(get_current_master),
 ):
-    # Находим заявку
     obj = await db.get(ServiceRequest, request_id)
-    if not obj:
+
+
+    if not obj or not has_request_access(obj, current_master):
         raise HTTPException(status_code=404, detail="Request not found")
 
-    # Проверяем права: владелец ИЛИ назначенный мастер
-    is_owner = (obj.master_id == current_master.id)
-    is_assigned = (obj.assigned_master_id == current_master.id)
-    if not (is_owner or is_assigned):
-        raise HTTPException(status_code=403, detail="Нет прав на редактирование")
 
-    # --- Обработка статуса (с простановкой дат) ---
+    # --- Статус ---
     if payload.status is not None and payload.status != obj.status:
         now = datetime.utcnow()
+
+
         if payload.status == "in_work" and obj.status != "in_work":
             obj.in_work_at = now
+
+
         if payload.status == "done" and obj.status != "done":
             obj.done_at = now
+
+
             if not obj.in_work_at:
                 obj.in_work_at = now
+
+
         if payload.status == "canceled" and obj.status != "canceled":
             obj.cancelled_at = now
             obj.total_amount = 0
+            obj.dispatcher_fee_amount = 0
+
+
         obj.status = payload.status
 
-    # --- Смена исполнителя (только если передан assigned_master_id) ---
+
+    # --- Назначение исполнителя ---
     if payload.assigned_master_id is not None:
         if payload.assigned_master_id == current_master.id:
             raise HTTPException(400, "Нельзя назначить заявку самому себе")
+
+
         target_master = await db.get(Master, payload.assigned_master_id)
+
+
         if not target_master:
             raise HTTPException(404, "Мастер не найден")
+
+
         obj.assigned_master_id = payload.assigned_master_id
-        # Если заявка была новой – переводим в статус "assigned"
+        obj.is_from_dispatcher = obj.master_id != obj.assigned_master_id
+
+
+        if obj.is_from_dispatcher:
+            # Фиксируем процент диспетчера на момент передачи заявки.
+            obj.dispatcher_commission_percent = (
+                target_master.dispatcher_commission_percent
+            )
+        else:
+            obj.dispatcher_commission_percent = None
+            obj.dispatcher_fee_amount = None
+
+
         if obj.status == "new" and payload.status is None:
             obj.status = "assigned"
-        # Отправляем уведомление новому мастеру
-        
+
+
         await notify_master_request_created(obj.id)
 
-    # --- Обновление остальных полей (доступно и владельцу, и исполнителю) ---
+
+    # --- Финансы ---
     if payload.total_amount is not None:
         obj.total_amount = payload.total_amount
-    if payload.payment_status is not None:
-        obj.payment_status = payload.payment_status
-    if payload.paid_amount is not None:
-        obj.paid_amount = payload.paid_amount
+
+
     if payload.parts_cost is not None:
         obj.parts_cost = payload.parts_cost
+
+
+    if payload.payment_status is not None:
+        obj.payment_status = payload.payment_status
+
+
+    if payload.paid_amount is not None:
+        obj.paid_amount = payload.paid_amount
+
+
     if payload.paid_at is not None:
         obj.paid_at = payload.paid_at
+
+
+    # Пересчитываем вознаграждение диспетчера.
+    if obj.is_from_dispatcher and obj.total_amount is not None:
+        if obj.dispatcher_commission_percent is not None:
+            obj.dispatcher_fee_amount = (
+                obj.total_amount
+                * obj.dispatcher_commission_percent
+                / 100
+            )
+        else:
+            obj.dispatcher_fee_amount = None
+
+
+    # --- Прочие поля ---
     if payload.source is not None:
         obj.source = payload.source
+
+
     if payload.what_was_done is not None:
         obj.what_was_done = payload.what_was_done
+
+
     if payload.main_category is not None:
         obj.main_category = payload.main_category
+
+
     if payload.subtype is not None:
         obj.subtype = payload.subtype
+
+
     if payload.service_title is not None:
         obj.service_title = payload.service_title
+
+
     if payload.repair_description is not None:
         obj.repair_description = payload.repair_description
+
+
     if payload.warranty_period is not None:
         obj.warranty_period = payload.warranty_period
+
 
     await db.commit()
     await db.refresh(obj)
@@ -497,8 +628,17 @@ async def get_request_sticker(
     current_master: Master = Depends(get_current_master),
 ):
     req = await db.get(ServiceRequest, request_id)
-    if not req or (req.master_id != current_master.id and req.assigned_master_id != current_master.id):
+
+
+    if not req or not has_request_access(req, current_master):
         raise HTTPException(404, "Заявка не найдена или нет доступа")
-    frontend_base = os.getenv("PANEL_BASE_URL", "https://panel.master-rbt-crm.ru")
+
+
+    frontend_base = os.getenv(
+        "PANEL_BASE_URL",
+        "https://panel.master-rbt-crm.ru",
+    )
     img_bytes = await generate_sticker_for_request(request_id, frontend_base)
+
+
     return Response(content=img_bytes, media_type="image/png")
