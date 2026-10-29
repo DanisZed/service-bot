@@ -135,6 +135,7 @@ class CreateRequestFromWeb(BaseModel):
     total_amount: Optional[float] = None
     parts_cost: Optional[float] = None
     source: str = "web"
+    lead_source_id: Optional[int] = None
     yandex_url: Optional[str] = None
 
 
@@ -340,6 +341,7 @@ async def create_request_from_web(
         "paid_amount": None,
         "paid_at": None,
         "source": payload.source,
+        "lead_source_id": payload.lead_source_id,
         "yandex_url": payload.yandex_url,
         "google_url": None,
         "meta": None,

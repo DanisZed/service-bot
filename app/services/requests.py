@@ -127,6 +127,7 @@ async def create_service_request(
     obj = ServiceRequest(
         status="new",
         source=data.get("source", "max_bot"),
+        lead_source_id=data.get("lead_source_id"),
         user_external_id=data["user_id"],
         chat_external_id=data["chat_id"],
         master_id=master_id,
