@@ -650,6 +650,9 @@ async def update_service_request(
             obj.is_from_dispatcher = False
             obj.dispatcher_commission_percent = None
             obj.dispatcher_fee_amount = None
+        elif payload.assigned_master_id == obj.assigned_master_id:
+            # Исполнитель не изменился — ничего не делаем.
+            pass
         else:
             if payload.assigned_master_id == obj.master_id:
                 raise HTTPException(
