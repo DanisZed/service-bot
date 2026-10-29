@@ -651,7 +651,7 @@ async def update_service_request(
             obj.dispatcher_commission_percent = None
             obj.dispatcher_fee_amount = None
         elif payload.assigned_master_id == obj.assigned_master_id:
-            # Исполнитель не изменился — ничего не делаем.
+            # Исполнитель не изменился — уведомление не отправляем.
             pass
         else:
             if payload.assigned_master_id == obj.master_id:
@@ -706,7 +706,10 @@ async def update_service_request(
 
 
 
-            await notify_master_request_created(obj.id)
+            await notify_master_request_created(
+                obj.id,
+                target_master_id=obj.assigned_master_id,
+            )
 
 
 
@@ -840,9 +843,11 @@ async def update_service_request(
             obj.dispatcher_fee_amount = None
 
 
+
     # --- Клиент ---
     if "client_name" in provided_fields:
         obj.client_name = payload.client_name
+
 
 
     # --- Прочие поля ---
