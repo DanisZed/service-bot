@@ -17,6 +17,7 @@ from sqlalchemy import (
     Boolean,
     UniqueConstraint,
     Index,
+    func,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -653,6 +654,7 @@ class Part(Base):
 
 
 
+
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     master_id = Column(
         BigInteger,
@@ -663,19 +665,31 @@ class Part(Base):
 
 
 
+
     category = Column(String(100), nullable=False)
     name = Column(Text, nullable=False)
     item_type = Column(String(32), nullable=False, default="part")
 
 
 
+
     is_active = Column(Boolean, default=True, nullable=False)
+
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
     updated_at = Column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
         nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
+
 
 
 
