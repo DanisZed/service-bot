@@ -2,7 +2,7 @@
 # API склада запчастей: список, создание, партии закупки, FIFO-списание в заявку и категории.
 
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -442,11 +442,15 @@ async def create_part(
         )
 
 
+    now = datetime.now(timezone.utc)
+
     part = Part(
         master_id=current_master.id,
         category=payload.category.strip(),
         name=payload.name.strip(),
         item_type=payload.item_type,
+        created_at=now,
+        updated_at=now,
     )
 
 
