@@ -938,6 +938,9 @@ class ResaleDeal(Base):
 
     resale_item = relationship("Part")
 
+    
+    master = relationship("Master")
+
 
 
 
