@@ -826,7 +826,7 @@ async def update_resale_deal(
         deal.notes = payload.notes
 
     if payload.warranty_months is not None:
-    deal.warranty_months = payload.warranty_months
+        deal.warranty_months = payload.warranty_months
 
 
     if payload.delivery_cost is not None:
