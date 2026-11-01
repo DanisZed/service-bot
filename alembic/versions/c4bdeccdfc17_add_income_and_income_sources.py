@@ -7,13 +7,14 @@ Create Date: 2026-11-02 01:05:14.295894
 """
 from typing import Sequence, Union
 
+
 from alembic import op
 import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'c4bdeccdfc17'
-down_revision: Union[str, Sequence[str], None] = '98ae4a60487b'
+revision: str = "c4bdeccdfc17"
+down_revision: Union[str, Sequence[str], None] = "98ae4a60487b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -35,8 +36,18 @@ def upgrade() -> None:
     )
 
 
-    op.create_index("ix_income_source_id", "income_source", ["id"])
-    op.create_index("ix_income_source_master_id", "income_source", ["master_id"])
+    op.create_index(
+        "ix_income_source_id",
+        "income_source",
+        ["id"],
+    )
+
+
+    op.create_index(
+        "ix_income_source_master_id",
+        "income_source",
+        ["master_id"],
+    )
 
 
     op.create_table(
@@ -68,15 +79,37 @@ def upgrade() -> None:
     )
 
 
-    op.create_index("ix_income_id", "income", ["id"])
-    op.create_index("ix_income_master_id", "income", ["master_id"])
-    op.create_index("ix_income_source_id", "income", ["source_id"])
-    op.create_index("ix_income_received_at", "income", ["received_at"])
+    op.create_index(
+        "ix_income_id",
+        "income",
+        ["id"],
+    )
+
+
+    op.create_index(
+        "ix_income_master_id",
+        "income",
+        ["master_id"],
+    )
+
+
+    op.create_index(
+        "ix_income_source_id_idx",
+        "income",
+        ["source_id"],
+    )
+
+
+    op.create_index(
+        "ix_income_received_at",
+        "income",
+        ["received_at"],
+    )
 
 
 def downgrade() -> None:
     op.drop_index("ix_income_received_at", table_name="income")
-    op.drop_index("ix_income_source_id", table_name="income")
+    op.drop_index("ix_income_source_id_idx", table_name="income")
     op.drop_index("ix_income_master_id", table_name="income")
     op.drop_index("ix_income_id", table_name="income")
     op.drop_table("income")
