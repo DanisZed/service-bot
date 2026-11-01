@@ -9,7 +9,7 @@ from typing import List, Optional
 
 
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,11 @@ from app.db.models import (
     ResaleDealPart,
 )
 
+
+from app.services.warranty_generator import (
+    build_warranty_pdf,
+    build_warranty_sticker_pdf,
+)
 
 
 router = APIRouter(prefix="/api/finance", tags=["finance"])
@@ -1022,3 +1027,43 @@ async def delete_part_from_resale_deal(
 
     await db.delete(item)
     await db.commit()
+
+
+@router.get("/resale-deals/{deal_id}/warranty-pdf")
+async def get_resale_deal_warranty_pdf(
+    deal_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    deal = await get_owned_deal(deal_id, current_master, db)
+    pdf = build_warranty_pdf(deal)
+
+
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="warranty-{deal.id}.pdf"'
+        },
+    )
+
+
+
+
+@router.get("/resale-deals/{deal_id}/sticker-pdf")
+async def get_resale_deal_sticker_pdf(
+    deal_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    deal = await get_owned_deal(deal_id, current_master, db)
+    pdf = build_warranty_sticker_pdf(deal)
+
+
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="sticker-{deal.id}.pdf"'
+        },
+    )
