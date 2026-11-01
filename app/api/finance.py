@@ -2,11 +2,9 @@
 # API расходов, категорий расходов и сделок перепродажи.
 
 
-
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
-
 
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -14,7 +12,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-
 
 
 from app.api.deps import get_current_master, get_db
@@ -38,17 +35,12 @@ from app.services.warranty_generator import (
 router = APIRouter(prefix="/api/finance", tags=["finance"])
 
 
-
-
 # ========== СХЕМЫ ==========
-
 
 
 class ExpenseCategoryCreate(BaseModel):
     name: str
     parent_id: Optional[int] = None
-
-
 
 
 class ExpenseCategoryOut(BaseModel):
@@ -57,16 +49,12 @@ class ExpenseCategoryOut(BaseModel):
     parent_id: Optional[int] = None
 
 
-
-
 class ExpenseCreate(BaseModel):
     category_id: int
     amount: float
     description: Optional[str] = None
     spent_at: datetime
     resale_deal_id: Optional[int] = None
-
-
 
 
 class ExpenseOut(BaseModel):
@@ -79,16 +67,12 @@ class ExpenseOut(BaseModel):
     resale_deal_id: Optional[int] = None
 
 
-
-
 class ResaleDealCreate(BaseModel):
     title: str
     resale_item_id: int
     notes: Optional[str] = None
     warranty_months: Optional[int] = None
     delivery_cost: Optional[float] = None
-
-
 
 
 class ResaleDealUpdate(BaseModel):
@@ -99,8 +83,7 @@ class ResaleDealUpdate(BaseModel):
     notes: Optional[str] = None
     warranty_months: Optional[int] = None
     delivery_cost: Optional[float] = None
-
-
+    sold_at: Optional[datetime] = None
 
 
 class ResaleDealPartOut(BaseModel):
@@ -110,8 +93,6 @@ class ResaleDealPartOut(BaseModel):
     quantity: int
     unit_cost: float
     total_cost: float
-
-
 
 
 class ResaleDealOut(BaseModel):
@@ -129,9 +110,9 @@ class ResaleDealOut(BaseModel):
     purchased_at: Optional[datetime] = None
     sold_at: Optional[datetime] = None
     notes: Optional[str] = None
+    warranty_months: Optional[int] = None
+    delivery_cost: float = 0
     parts: List[ResaleDealPartOut] = []
-
-
 
 
 class ResaleDealPartCreate(BaseModel):
@@ -139,10 +120,7 @@ class ResaleDealPartCreate(BaseModel):
     quantity: int
 
 
-
-
 # ========== КАТЕГОРИИ РАСХОДОВ ==========
-
 
 
 @router.get("/expense-categories", response_model=List[ExpenseCategoryOut])
@@ -160,9 +138,7 @@ async def list_expense_categories(
     )
 
 
-
     categories = result.scalars().all()
-
 
 
     return [
@@ -175,8 +151,6 @@ async def list_expense_categories(
     ]
 
 
-
-
 @router.post("/expense-categories", response_model=ExpenseCategoryOut, status_code=201)
 async def create_expense_category(
     payload: ExpenseCategoryCreate,
@@ -187,13 +161,11 @@ async def create_expense_category(
     name = name.strip()
 
 
-
     if not name:
         raise HTTPException(
             status_code=400,
             detail="Название категории обязательно"
         )
-
 
 
     if payload.parent_id is not None:
@@ -206,7 +178,6 @@ async def create_expense_category(
         parent = parent_result.scalar_one_or_none()
 
 
-
         if not parent:
             raise HTTPException(
                 status_code=404,
@@ -214,13 +185,11 @@ async def create_expense_category(
             )
 
 
-
         if parent.parent_id is not None:
             raise HTTPException(
                 status_code=400,
                 detail="Подкатегория не может быть родительской категорией"
             )
-
 
 
     duplicate_result = await db.execute(
@@ -232,9 +201,7 @@ async def create_expense_category(
     )
 
 
-
     existing = duplicate_result.scalar_one_or_none()
-
 
 
     if existing:
@@ -244,7 +211,6 @@ async def create_expense_category(
         )
 
 
-
     category = ExpenseCategory(
         master_id=current_master.id,
         parent_id=payload.parent_id,
@@ -252,11 +218,9 @@ async def create_expense_category(
     )
 
 
-
     db.add(category)
     await db.commit()
     await db.refresh(category)
-
 
 
     return ExpenseCategoryOut(
@@ -264,8 +228,6 @@ async def create_expense_category(
         name=category.name,
         parent_id=category.parent_id,
     )
-
-
 
 
 @router.delete("/expense-categories/{category_id}")
@@ -282,9 +244,7 @@ async def delete_expense_category(
     )
 
 
-
     category = result.scalar_one_or_none()
-
 
 
     if not category:
@@ -294,13 +254,11 @@ async def delete_expense_category(
         )
 
 
-
     children_result = await db.execute(
         select(ExpenseCategory).where(
             ExpenseCategory.parent_id == category.id
         )
     )
-
 
 
     if children_result.scalars().first():
@@ -310,13 +268,11 @@ async def delete_expense_category(
         )
 
 
-
     expenses_result = await db.execute(
         select(Expense).where(
             Expense.category_id == category.id
         )
     )
-
 
 
     if expenses_result.scalars().first():
@@ -326,19 +282,14 @@ async def delete_expense_category(
         )
 
 
-
     await db.delete(category)
     await db.commit()
-
 
 
     return {"success": True}
 
 
-
-
 # ========== РАСХОДЫ ==========
-
 
 
 @router.get("/expenses", response_model=List[ExpenseOut])
@@ -354,9 +305,7 @@ async def list_expenses(
     )
 
 
-
     expenses = result.scalars().unique().all()
-
 
 
     return [
@@ -373,8 +322,6 @@ async def list_expenses(
     ]
 
 
-
-
 @router.post("/expenses", response_model=ExpenseOut, status_code=201)
 async def create_expense(
     payload: ExpenseCreate,
@@ -388,7 +335,6 @@ async def create_expense(
         )
 
 
-
     category_result = await db.execute(
         select(ExpenseCategory).where(
             ExpenseCategory.id == payload.category_id,
@@ -398,13 +344,11 @@ async def create_expense(
     category = category_result.scalar_one_or_none()
 
 
-
     if not category:
         raise HTTPException(
             status_code=404,
             detail="Категория расхода не найдена"
         )
-
 
 
     if payload.resale_deal_id:
@@ -417,13 +361,11 @@ async def create_expense(
         deal = deal_result.scalar_one_or_none()
 
 
-
         if not deal:
             raise HTTPException(
                 status_code=404,
                 detail="Сделка перепродажи не найдена"
             )
-
 
 
     expense = Expense(
@@ -436,11 +378,9 @@ async def create_expense(
     )
 
 
-
     db.add(expense)
     await db.commit()
     await db.refresh(expense)
-
 
 
     return ExpenseOut(
@@ -452,8 +392,6 @@ async def create_expense(
         spent_at=expense.spent_at,
         resale_deal_id=expense.resale_deal_id,
     )
-
-
 
 
 @router.delete("/expenses/{expense_id}", status_code=204)
@@ -470,9 +408,7 @@ async def delete_expense(
     )
 
 
-
     expense = result.scalar_one_or_none()
-
 
 
     if not expense:
@@ -482,15 +418,11 @@ async def delete_expense(
         )
 
 
-
     await db.delete(expense)
     await db.commit()
 
 
-
-
 # ========== СДЕЛКИ ПЕРЕПРОДАЖИ ==========
-
 
 
 async def get_owned_deal(
@@ -515,9 +447,7 @@ async def get_owned_deal(
     )
 
 
-
     deal = result.scalar_one_or_none()
-
 
 
     if not deal:
@@ -527,10 +457,7 @@ async def get_owned_deal(
         )
 
 
-
     return deal
-
-
 
 
 def serialize_deal(deal: ResaleDeal, expenses_total: Decimal) -> dict:
@@ -539,14 +466,11 @@ def serialize_deal(deal: ResaleDeal, expenses_total: Decimal) -> dict:
     )
 
 
-
     item_cost = Decimal("0")
-
 
 
     if deal.resale_item:
         item_batches = deal.resale_item.batches
-
 
 
         item_cost = sum(
@@ -556,10 +480,8 @@ def serialize_deal(deal: ResaleDeal, expenses_total: Decimal) -> dict:
         )
 
 
-
     total_cost = item_cost + parts_cost + expenses_total
     profit = deal.sale_amount - total_cost
-
 
 
     return {
@@ -595,7 +517,6 @@ def serialize_deal(deal: ResaleDeal, expenses_total: Decimal) -> dict:
     }
 
 
-
 async def get_deal_expenses_total(
     deal_id: int,
     db: AsyncSession,
@@ -607,10 +528,7 @@ async def get_deal_expenses_total(
     )
 
 
-
     return result.scalar_one()
-
-
 
 
 @router.get("/resale-deals", response_model=List[ResaleDealOut])
@@ -633,13 +551,10 @@ async def list_resale_deals(
     )
 
 
-
     deals = result.scalars().unique().all()
 
 
-
     serialized = []
-
 
 
     for deal in deals:
@@ -647,10 +562,7 @@ async def list_resale_deals(
         serialized.append(serialize_deal(deal, expenses_total))
 
 
-
     return serialized
-
-
 
 
 @router.post("/resale-deals", response_model=ResaleDealOut, status_code=201)
@@ -662,13 +574,11 @@ async def create_resale_deal(
     title = payload.title.strip()
 
 
-
     if not title:
         raise HTTPException(
             status_code=400,
             detail="Укажите название сделки"
         )
-
 
 
     item_result = await db.execute(
@@ -683,7 +593,6 @@ async def create_resale_deal(
     resale_item = item_result.scalar_one_or_none()
 
 
-
     if not resale_item:
         raise HTTPException(
             status_code=404,
@@ -691,11 +600,9 @@ async def create_resale_deal(
         )
 
 
-
     available_quantity = sum(
         batch.quantity_remaining for batch in resale_item.batches
     )
-
 
 
     if available_quantity < 1:
@@ -703,7 +610,6 @@ async def create_resale_deal(
             status_code=400,
             detail="Товара нет в наличии"
         )
-
 
 
     deal = ResaleDeal(
@@ -716,10 +622,8 @@ async def create_resale_deal(
     )
 
 
-
     db.add(deal)
     await db.flush()
-
 
 
     batch = next(
@@ -732,24 +636,19 @@ async def create_resale_deal(
     )
 
 
-
     if batch:
         batch.quantity_remaining -= 1
-
 
 
     await db.commit()
     await db.refresh(deal)
 
 
-
     deal = await get_owned_deal(deal.id, current_master, db)
     expenses_total = await get_deal_expenses_total(deal.id, db)
 
 
-
     return serialize_deal(deal, expenses_total)
-
 
 
 @router.get("/resale-deals/{deal_id}", response_model=ResaleDealOut)
@@ -762,10 +661,7 @@ async def get_resale_deal(
     expenses_total = await get_deal_expenses_total(deal.id, db)
 
 
-
     return serialize_deal(deal, expenses_total)
-
-
 
 
 @router.patch("/resale-deals/{deal_id}", response_model=ResaleDealOut)
@@ -778,10 +674,8 @@ async def update_resale_deal(
     deal = await get_owned_deal(deal_id, current_master, db)
 
 
-
     if payload.title is not None:
         deal.title = payload.title.strip()
-
 
 
     if payload.status is not None:
@@ -794,7 +688,6 @@ async def update_resale_deal(
         }
 
 
-
         if payload.status not in allowed_statuses:
             raise HTTPException(
                 status_code=400,
@@ -802,28 +695,24 @@ async def update_resale_deal(
             )
 
 
-
         deal.status = payload.status
 
 
-
-        if payload.status == "sold":
+        if payload.status == "sold" and deal.sold_at is None:
             deal.sold_at = datetime.utcnow()
-
 
 
     if payload.purchase_amount is not None:
         deal.purchase_amount = Decimal(str(payload.purchase_amount))
 
 
-
     if payload.sale_amount is not None:
         deal.sale_amount = Decimal(str(payload.sale_amount))
 
 
-
     if payload.notes is not None:
         deal.notes = payload.notes
+
 
     if payload.warranty_months is not None:
         deal.warranty_months = payload.warranty_months
@@ -832,18 +721,19 @@ async def update_resale_deal(
     if payload.delivery_cost is not None:
         deal.delivery_cost = Decimal(str(payload.delivery_cost))
 
-    await db.commit()
 
+    if payload.sold_at is not None:
+        deal.sold_at = payload.sold_at
+
+
+    await db.commit()
 
 
     deal = await get_owned_deal(deal_id, current_master, db)
     expenses_total = await get_deal_expenses_total(deal.id, db)
 
 
-
     return serialize_deal(deal, expenses_total)
-
-
 
 
 @router.delete("/resale-deals/{deal_id}", status_code=204)
@@ -855,7 +745,6 @@ async def delete_resale_deal(
     deal = await get_owned_deal(deal_id, current_master, db)
 
 
-
     if deal.resale_item:
         item_result = await db.execute(
             select(Part)
@@ -865,11 +754,9 @@ async def delete_resale_deal(
         resale_item = item_result.scalar_one_or_none()
 
 
-
         if resale_item and resale_item.batches:
             batch = resale_item.batches[0]
             batch.quantity_remaining += 1
-
 
 
     for item in deal.parts:
@@ -877,15 +764,11 @@ async def delete_resale_deal(
             item.batch.quantity_remaining += item.quantity
 
 
-
     await db.delete(deal)
     await db.commit()
 
 
-
-
 # ========== ЗАПЧАСТИ В СДЕЛКЕ ==========
-
 
 
 @router.post(
@@ -905,9 +788,7 @@ async def add_part_to_resale_deal(
         )
 
 
-
     deal = await get_owned_deal(deal_id, current_master, db)
-
 
 
     part_result = await db.execute(
@@ -921,7 +802,6 @@ async def add_part_to_resale_deal(
     part = part_result.scalar_one_or_none()
 
 
-
     if not part:
         raise HTTPException(
             status_code=404,
@@ -929,11 +809,9 @@ async def add_part_to_resale_deal(
         )
 
 
-
     available_quantity = sum(
         batch.quantity_remaining for batch in part.batches
     )
-
 
 
     if available_quantity < payload.quantity:
@@ -943,9 +821,7 @@ async def add_part_to_resale_deal(
         )
 
 
-
     remaining = payload.quantity
-
 
 
     for batch in part.batches:
@@ -953,15 +829,12 @@ async def add_part_to_resale_deal(
             break
 
 
-
         if batch.quantity_remaining <= 0:
             continue
 
 
-
         take = min(batch.quantity_remaining, remaining)
         remaining -= take
-
 
 
         item = ResaleDealPart(
@@ -974,24 +847,18 @@ async def add_part_to_resale_deal(
         )
 
 
-
         db.add(item)
         batch.quantity_remaining -= take
 
 
-
     await db.commit()
-
 
 
     deal = await get_owned_deal(deal.id, current_master, db)
     expenses_total = await get_deal_expenses_total(deal.id, db)
 
 
-
     return serialize_deal(deal, expenses_total)
-
-
 
 
 @router.delete(
@@ -1007,7 +874,6 @@ async def delete_part_from_resale_deal(
     deal = await get_owned_deal(deal_id, current_master, db)
 
 
-
     result = await db.execute(
         select(ResaleDealPart)
         .options(selectinload(ResaleDealPart.batch))
@@ -1018,9 +884,7 @@ async def delete_part_from_resale_deal(
     )
 
 
-
     item = result.scalar_one_or_none()
-
 
 
     if not item:
@@ -1030,10 +894,8 @@ async def delete_part_from_resale_deal(
         )
 
 
-
     if item.batch:
         item.batch.quantity_remaining += item.quantity
-
 
 
     await db.delete(item)
@@ -1057,8 +919,6 @@ async def get_resale_deal_warranty_pdf(
             "Content-Disposition": f'inline; filename="warranty-{deal.id}.pdf"'
         },
     )
-
-
 
 
 @router.get("/resale-deals/{deal_id}/sticker-pdf")
