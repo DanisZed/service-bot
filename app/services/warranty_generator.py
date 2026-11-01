@@ -1,14 +1,54 @@
 import io
 import os
 from datetime import timedelta
+from pathlib import Path
+
 
 import qrcode
 from reportlab.lib.pagesizes import A5
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.pdfmetrics import registerFontFamily
 from reportlab.pdfgen import canvas
 
+
 from app.db.models import ResaleDeal
+
+
+
+
+FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+
+
+
+
+pdfmetrics.registerFont(
+    TTFont(
+        "DejaVu",
+        str(FONT_DIR / "DejaVuSans.ttf"),
+    )
+)
+
+
+pdfmetrics.registerFont(
+    TTFont(
+        "DejaVu-Bold",
+        str(FONT_DIR / "DejaVuSans-Bold.ttf"),
+    )
+)
+
+
+registerFontFamily(
+    "DejaVu",
+    normal="DejaVu",
+    bold="DejaVu-Bold",
+    italic="DejaVu",
+    boldItalic="DejaVu-Bold",
+)
+
+
 
 
 
@@ -88,12 +128,12 @@ def build_warranty_pdf(deal: ResaleDeal) -> bytes:
     warranty_until = _get_warranty_until(deal)
 
 
-    c.setFont("Helvetica-Bold", 16)
+    c.setFont("DejaVu-Bold", 16)
     c.drawString(x, y, "ГАРАНТИЙНЫЙ ТАЛОН")
 
 
     y -= 12 * mm
-    c.setFont("Helvetica", 11)
+    c.setFont("DejaVu", 11)
 
 
     lines = [
@@ -155,11 +195,11 @@ def build_warranty_sticker_pdf(deal: ResaleDeal) -> bytes:
     warranty_until = _get_warranty_until(deal)
 
 
-    c.setFont("Helvetica-Bold", 12)
+    c.setFont("DejaVu-Bold", 12)
     c.drawString(8 * mm, height - 10 * mm, "ГАРАНТИЙНЫЙ ТАЛОН")
 
 
-    c.setFont("Helvetica", 9)
+    c.setFont("DejaVu", 9)
     c.drawString(8 * mm, height - 18 * mm, device[:38])
 
 
