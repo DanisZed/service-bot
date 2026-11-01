@@ -8,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.session import get_session
-from app.db.models import ServiceRequest, Master
+from app.db.models import ServiceRequest, Master, ResaleDeal
+
+import os
+from datetime import timedelta
+from uuid import UUID
 
 router = APIRouter(prefix="/api/public", tags=["public"])
 
@@ -107,4 +111,80 @@ async def get_public_request(
         service_phone=service_phone,
         warranty_period=req.warranty_period,
         done_at=req.done_at.isoformat() if req.done_at else None,
+    )
+
+
+class PublicWarrantyOut(BaseModel):
+    device: str
+    sold_at: Optional[str] = None
+    warranty_months: Optional[int] = None
+    warranty_until: Optional[str] = None
+
+
+    seller_type: str
+    seller_name: Optional[str] = None
+    seller_phone: Optional[str] = None
+    seller_address: Optional[str] = None
+
+
+
+
+@router.get("/warranty/{public_id}", response_model=PublicWarrantyOut)
+async def get_public_warranty(
+    public_id: UUID,
+    db: AsyncSession = Depends(get_session),
+):
+    result = await db.execute(
+        select(ResaleDeal)
+        .options(
+            selectinload(ResaleDeal.resale_item),
+            selectinload(ResaleDeal.master).selectinload(Master.service_center),
+        )
+        .where(ResaleDeal.public_id == public_id)
+    )
+    deal = result.scalar_one_or_none()
+
+
+    if not deal:
+        raise HTTPException(404, "Гарантийный талон не найден")
+
+
+    device = deal.resale_item.name if deal.resale_item else deal.title
+
+
+    master = deal.master
+    service_center = master.service_center if master else None
+
+
+    if service_center:
+        seller_type = "service_center"
+        seller_name = service_center.service_name
+        seller_phone = service_center.phone
+        seller_address = service_center.address
+    else:
+        seller_type = "master"
+        seller_name = (
+            f"{master.lastname or ''} {master.name or ''}".strip()
+            if master else None
+        )
+        seller_phone = master.phone if master else None
+        seller_address = None
+
+
+    warranty_until = None
+    if deal.sold_at and deal.warranty_months:
+        warranty_until = (
+            deal.sold_at + timedelta(days=deal.warranty_months * 30)
+        ).isoformat()
+
+
+    return PublicWarrantyOut(
+        device=device,
+        sold_at=deal.sold_at.isoformat() if deal.sold_at else None,
+        warranty_months=deal.warranty_months,
+        warranty_until=warranty_until,
+        seller_type=seller_type,
+        seller_name=seller_name,
+        seller_phone=seller_phone,
+        seller_address=seller_address,
     )
