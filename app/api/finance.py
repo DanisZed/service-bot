@@ -85,6 +85,8 @@ class ResaleDealCreate(BaseModel):
     title: str
     resale_item_id: int
     notes: Optional[str] = None
+    warranty_months: Optional[int] = None
+    delivery_cost: Optional[float] = None
 
 
 
@@ -95,6 +97,8 @@ class ResaleDealUpdate(BaseModel):
     purchase_amount: Optional[float] = None
     sale_amount: Optional[float] = None
     notes: Optional[str] = None
+    warranty_months: Optional[int] = None
+    delivery_cost: Optional[float] = None
 
 
 
@@ -575,6 +579,8 @@ def serialize_deal(deal: ResaleDeal, expenses_total: Decimal) -> dict:
         "purchased_at": deal.purchased_at,
         "sold_at": deal.sold_at,
         "notes": deal.notes,
+        "warranty_months": deal.warranty_months,
+        "delivery_cost": float(deal.delivery_cost or 0),
         "parts": [
             {
                 "id": item.id,
@@ -819,7 +825,12 @@ async def update_resale_deal(
     if payload.notes is not None:
         deal.notes = payload.notes
 
+    if payload.warranty_months is not None:
+    deal.warranty_months = payload.warranty_months
 
+
+    if payload.delivery_cost is not None:
+        deal.delivery_cost = Decimal(str(payload.delivery_cost))
 
     await db.commit()
 

@@ -228,6 +228,7 @@ def build_warranty_pdf(deal: ResaleDeal) -> bytes:
     c.setFillColor(TEXT_COLOR)
     c.setFont("DejaVu-Bold", 11)
     c.drawString(x, y, "Информация о товаре")
+    
 
 
     y -= 5 * mm
@@ -251,6 +252,26 @@ def build_warranty_pdf(deal: ResaleDeal) -> bytes:
         "Дата продажи",
         deal.sold_at.strftime("%d.%m.%Y") if deal.sold_at else "—",
     )
+
+    y = _draw_info_row(
+        c,
+        x,
+        y,
+        content_width,
+        "Стоимость товара",
+        f"{deal.sale_amount or 0:.2f} ₽",
+    )
+
+
+    y = _draw_info_row(
+        c,
+        x,
+        y,
+        content_width,
+        "Стоимость доставки",
+        f"{deal.delivery_cost or 0:.2f} ₽",
+    )
+
 
 
     y = _draw_info_row(
@@ -377,7 +398,7 @@ def build_warranty_pdf(deal: ResaleDeal) -> bytes:
 
 def build_warranty_sticker_pdf(deal: ResaleDeal) -> bytes:
     buffer = io.BytesIO()
-    width, height = 100 * mm, 50 * mm
+    width, height = 80 * mm, 50 * mm
     c = canvas.Canvas(buffer, pagesize=(width, height))
 
 
@@ -388,53 +409,70 @@ def build_warranty_sticker_pdf(deal: ResaleDeal) -> bytes:
     c.setStrokeColor(colors.black)
     c.setLineWidth(0.8)
     c.roundRect(
-        2 * mm,
-        2 * mm,
-        width - 4 * mm,
-        height - 4 * mm,
-        2 * mm,
+        1.5 * mm,
+        1.5 * mm,
+        width - 3 * mm,
+        height - 3 * mm,
+        1.5 * mm,
         stroke=1,
         fill=0,
     )
 
 
     device = deal.resale_item.name if deal.resale_item else deal.title
+    seller = _get_seller(deal)
     warranty_until = _get_warranty_until(deal)
 
 
     c.setFillColor(colors.black)
-    c.setFont("DejaVu-Bold", 11)
-    c.drawString(6 * mm, height - 9 * mm, "ГАРАНТИЙНЫЙ ТАЛОН")
+    c.setFont("DejaVu-Bold", 10)
+    c.drawString(5 * mm, height - 8 * mm, "ГАРАНТИЙНЫЙ ТАЛОН")
 
 
-    c.setFont("DejaVu-Bold", 9)
-    c.drawString(6 * mm, height - 16 * mm, device[:38])
+    c.setFont("DejaVu-Bold", 8)
+    c.drawString(5 * mm, height - 14 * mm, device[:34])
 
 
-    c.setFont("DejaVu", 8)
+    c.setFont("DejaVu", 7)
 
 
     if deal.sold_at:
         c.drawString(
-            6 * mm,
-            height - 23 * mm,
-            f"Продано: {deal.sold_at.strftime('%d.%m.%Y')}",
+            5 * mm,
+            height - 20 * mm,
+            f"Дата продажи: {deal.sold_at.strftime('%d.%m.%Y')}",
         )
 
 
     if deal.warranty_months:
         c.drawString(
-            6 * mm,
-            height - 29 * mm,
+            5 * mm,
+            height - 25 * mm,
             f"Гарантия: {deal.warranty_months} мес.",
         )
 
 
     if warranty_until:
         c.drawString(
-            6 * mm,
-            height - 35 * mm,
+            5 * mm,
+            height - 30 * mm,
             f"Действует до: {warranty_until.strftime('%d.%m.%Y')}",
+        )
+
+
+    if seller["name"]:
+        c.drawString(
+            5 * mm,
+            height - 36 * mm,
+            f"Продавец: {seller['name'][:30]}",
+        )
+
+
+    if seller["phone"]:
+        c.drawString(
+            5 * mm,
+            height - 41 * mm,
+            f"Тел.: {seller['phone']}",
         )
 
 
@@ -446,21 +484,13 @@ def build_warranty_sticker_pdf(deal: ResaleDeal) -> bytes:
     qr_buffer = _make_qr_image(qr_url)
 
 
-    qr_size = 32 * mm
+    qr_size = 26 * mm
     c.drawImage(
         ImageReader(qr_buffer),
-        width - qr_size - 6 * mm,
-        6 * mm,
+        width - qr_size - 4 * mm,
+        4 * mm,
         width=qr_size,
         height=qr_size,
-    )
-
-
-    c.setFont("DejaVu", 6.5)
-    c.drawString(
-        6 * mm,
-        8 * mm,
-        "Отсканируйте QR-код для проверки гарантии",
     )
 
 

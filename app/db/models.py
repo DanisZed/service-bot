@@ -894,6 +894,13 @@ class ResaleDeal(Base):
     sale_amount = Column(Numeric(12, 2), default=0, nullable=False)
 
 
+    delivery_cost = Column(
+    Numeric(12, 2),
+    default=0,
+    nullable=False,
+    )
+
+
     purchased_at = Column(DateTime(timezone=True), nullable=True)
     sold_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -938,7 +945,7 @@ class ResaleDeal(Base):
 
     resale_item = relationship("Part")
 
-    
+
     master = relationship("Master")
 
 
