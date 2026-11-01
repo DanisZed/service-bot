@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
-
+import uuid
 
 
 from sqlalchemy import (
@@ -19,11 +19,12 @@ from sqlalchemy import (
     Index,
     func,
 )
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import declarative_base, relationship
 
 
-
 Base = declarative_base()
+
 
 
 
@@ -45,6 +46,7 @@ class ServiceCenter(Base):
 
 
 
+
 class Client(Base):
     __tablename__ = "client"
 
@@ -62,6 +64,7 @@ class Client(Base):
 
 
 
+
 class ServiceRequest(Base):
     __tablename__ = "service_request"
 
@@ -73,20 +76,11 @@ class ServiceRequest(Base):
     visit_reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
 
 
-    # Владелец заявки: сервисный центр или мастер-одиночка.
-    # Для заявки сервиса это обычно диспетчер, создавший заявку.
     master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
-
-    # Исполнитель заявки.
     assigned_master_id = Column(BigInteger, ForeignKey("master.id"), nullable=True)
-
-    # Единый отображаемый номер заявки.
-    # Для сервиса номер выдаётся в рамках сервисного центра,
-    # для мастера-одиночки — в рамках его личного списка.
     master_seq = Column(Integer, nullable=True)
 
 
-    # Владелец-сервисный центр.
     service_center_id = Column(
         Integer,
         ForeignKey("service_center.id", ondelete="CASCADE"),
@@ -95,24 +89,9 @@ class ServiceRequest(Base):
     )
 
 
-    # Заявка была создана диспетчером и передана мастеру-исполнителю.
-    is_from_dispatcher = Column(
-        Boolean,
-        nullable=False,
-        default=False,
-    )
-
-    # Процент диспетчера, зафиксированный на момент назначения.
-    dispatcher_commission_percent = Column(
-        Numeric(5, 2),
-        nullable=True,
-    )
-
-    # Рассчитанное вознаграждение диспетчера.
-    dispatcher_fee_amount = Column(
-        Numeric(12, 2),
-        nullable=True,
-    )
+    is_from_dispatcher = Column(Boolean, nullable=False, default=False)
+    dispatcher_commission_percent = Column(Numeric(5, 2), nullable=True)
+    dispatcher_fee_amount = Column(Numeric(12, 2), nullable=True)
 
 
     status = Column(String(32), default="new", nullable=False)
@@ -173,17 +152,20 @@ class ServiceRequest(Base):
     client = relationship("Client", back_populates="requests")
     time_slots = relationship("TimeSlotBooking", back_populates="request")
 
+
     master = relationship(
         "Master",
         primaryjoin="ServiceRequest.master_id == Master.id",
         back_populates="requests",
     )
 
+
     assigned_master = relationship(
         "Master",
         primaryjoin="ServiceRequest.assigned_master_id == Master.id",
         lazy="selectin",
     )
+
 
     service_center = relationship("ServiceCenter")
 
@@ -206,10 +188,12 @@ class ServiceRequest(Base):
     def lead_source_name(self):
         return self.lead_source.name if self.lead_source else None
 
+
     @property
     def assigned_master_name(self):
         if not self.assigned_master:
             return None
+
 
         return " ".join(
             part
@@ -219,6 +203,7 @@ class ServiceRequest(Base):
             ]
             if part
         ) or None
+
 
 
 
@@ -235,8 +220,6 @@ class Master(Base):
 
     master_id = Column(String(12), unique=True, nullable=True)
     lastname = Column(Text, nullable=True)
-
-
     is_admin = Column(Integer, nullable=False, default=0)
 
 
@@ -247,19 +230,12 @@ class Master(Base):
     )
 
 
-    # Процент диспетчера от закрытой заявки,
-    # переданной этому мастеру.
-    dispatcher_commission_percent = Column(
-        Numeric(5, 2),
-        nullable=True,
-    )
+    dispatcher_commission_percent = Column(Numeric(5, 2), nullable=True)
 
 
     name = Column(Text, nullable=True)
     phone = Column(String(32), nullable=True)
     email = Column(String(255), nullable=True)
-
-
     avatar_url = Column(Text, nullable=True)
 
 
@@ -280,49 +256,39 @@ class Master(Base):
         back_populates="master",
     )
 
+
     service_center = relationship("ServiceCenter", back_populates="masters")
-
-
     device_categories = relationship(
         "DeviceCategory",
         back_populates="master",
         foreign_keys="DeviceCategory.master_id",
     )
-
-
     device_subtypes = relationship(
         "DeviceSubtype",
         back_populates="master",
         foreign_keys="DeviceSubtype.master_id",
     )
-
-
     lead_sources = relationship(
         "LeadSource",
         back_populates="master",
         foreign_keys="LeadSource.master_id",
     )
-
-
     webpush_subscriptions = relationship(
         "WebPushSubscription",
         back_populates="master",
         cascade="all, delete-orphan",
     )
-
-
     social_links = relationship(
         "MasterSocialLink",
         back_populates="master",
         cascade="all, delete-orphan",
     )
-
-
     parts = relationship(
         "Part",
         back_populates="master",
         cascade="all, delete-orphan",
     )
+
 
 
 
@@ -336,12 +302,11 @@ class MasterSocialLink(Base):
 
     type = Column(String(32), nullable=False)
     url = Column(Text, nullable=False)
-
-
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
     master = relationship("Master", back_populates="social_links")
+
 
 
 
@@ -369,13 +334,14 @@ class TimeSlotBooking(Base):
 
 
 
+
 class DeviceCategory(Base):
     __tablename__ = "device_category"
 
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # Владелец: либо сервисный центр, либо мастер-одиночка.
+
     service_center_id = Column(
         Integer,
         ForeignKey("service_center.id", ondelete="CASCADE"),
@@ -383,11 +349,13 @@ class DeviceCategory(Base):
         index=True,
     )
 
+
     master_id = Column(
         BigInteger,
         ForeignKey("master.id", ondelete="CASCADE"),
         nullable=True,
     )
+
 
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
@@ -407,9 +375,7 @@ class DeviceCategory(Base):
         back_populates="device_categories",
         foreign_keys=[master_id],
     )
-
     service_center = relationship("ServiceCenter")
-
     subtypes = relationship("DeviceSubtype", back_populates="category")
 
 
@@ -419,13 +385,14 @@ class DeviceCategory(Base):
 
 
 
+
 class DeviceSubtype(Base):
     __tablename__ = "device_subtype"
 
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # Владелец: либо сервисный центр, либо мастер-одиночка.
+
     service_center_id = Column(
         Integer,
         ForeignKey("service_center.id", ondelete="CASCADE"),
@@ -433,11 +400,13 @@ class DeviceSubtype(Base):
         index=True,
     )
 
+
     master_id = Column(
         BigInteger,
         ForeignKey("master.id", ondelete="CASCADE"),
         nullable=True,
     )
+
 
     category_id = Column(Integer, ForeignKey("device_category.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
@@ -460,9 +429,7 @@ class DeviceSubtype(Base):
         back_populates="device_subtypes",
         foreign_keys=[master_id],
     )
-
     service_center = relationship("ServiceCenter")
-
     category = relationship("DeviceCategory", back_populates="subtypes")
 
 
@@ -472,13 +439,14 @@ class DeviceSubtype(Base):
 
 
 
+
 class LeadSource(Base):
     __tablename__ = "lead_source"
 
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # Владелец: либо сервисный центр, либо мастер-одиночка.
+
     service_center_id = Column(
         Integer,
         ForeignKey("service_center.id", ondelete="CASCADE"),
@@ -486,11 +454,13 @@ class LeadSource(Base):
         index=True,
     )
 
+
     master_id = Column(
         BigInteger,
         ForeignKey("master.id", ondelete="CASCADE"),
         nullable=True,
     )
+
 
     name = Column(String(100), nullable=False)
     code = Column(String(50), nullable=True)
@@ -511,9 +481,7 @@ class LeadSource(Base):
         back_populates="lead_sources",
         foreign_keys=[master_id],
     )
-
     service_center = relationship("ServiceCenter")
-
     budgets = relationship("AdBudget", back_populates="source")
     requests = relationship("ServiceRequest", back_populates="lead_source")
 
@@ -521,6 +489,7 @@ class LeadSource(Base):
     __table_args__ = (
         UniqueConstraint("master_id", "name"),
     )
+
 
 
 
@@ -546,6 +515,7 @@ class AdBudget(Base):
 
 
 
+
 class WebPushSubscription(Base):
     __tablename__ = "webpush_subscription"
 
@@ -562,14 +532,13 @@ class WebPushSubscription(Base):
     endpoint = Column(Text, unique=True, nullable=False)
     p256dh = Column(Text, nullable=False)
     auth = Column(Text, nullable=False)
-
-
     user_agent = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     last_used_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
     master = relationship("Master", back_populates="webpush_subscriptions")
+
 
 
 
@@ -594,21 +563,14 @@ class Notification(Base):
 
     type = Column(String(32), nullable=False, default="visit_reminder")
     channel = Column(String(32), nullable=False, default="webpush")
-
-
     remind_at = Column(DateTime(timezone=True), nullable=False)
     sent_at = Column(DateTime(timezone=True), nullable=True)
-
-
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
     master = relationship("Master")
     request = relationship("ServiceRequest")
 
-
-
-# Модели склада запчастей: поставщики, запчасти, партии закупки и списания в заявки.
 
 
 
@@ -631,11 +593,7 @@ class Supplier(Base):
     is_active = Column(Boolean, nullable=False, default=True)
 
 
-    created_at = Column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
-        nullable=False,
-    )
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
         default=datetime.utcnow,
@@ -649,10 +607,9 @@ class Supplier(Base):
 
 
 
+
 class Part(Base):
     __tablename__ = "part"
-
-
 
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -664,15 +621,9 @@ class Part(Base):
     )
 
 
-
-
     category = Column(String(100), nullable=False)
     name = Column(Text, nullable=False)
     item_type = Column(String(32), nullable=False, default="part")
-
-
-
-
     is_active = Column(Boolean, default=True, nullable=False)
 
 
@@ -691,14 +642,13 @@ class Part(Base):
     )
 
 
-
-
     master = relationship("Master", back_populates="parts")
     batches = relationship(
         "PartBatch",
         back_populates="part",
         order_by="PartBatch.purchased_at",
     )
+
 
 
 
@@ -717,8 +667,6 @@ class PartBatch(Base):
 
     quantity_initial = Column(Integer, nullable=False)
     quantity_remaining = Column(Integer, nullable=False)
-
-
     purchase_price = Column(Numeric(12, 2), nullable=False)
     purchased_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
@@ -736,6 +684,7 @@ class PartBatch(Base):
     part = relationship("Part", back_populates="batches")
     supplier_rel = relationship("Supplier", back_populates="batches")
     request_parts = relationship("RequestPart", back_populates="batch")
+
 
 
 
@@ -767,8 +716,6 @@ class RequestPart(Base):
     quantity = Column(Integer, nullable=False)
     unit_cost = Column(Numeric(12, 2), nullable=False)
     total_cost = Column(Numeric(12, 2), nullable=False)
-
-
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
@@ -778,13 +725,12 @@ class RequestPart(Base):
 
 
 
+
 class PartCategory(Base):
     __tablename__ = "part_categories"
 
 
-
     id = Column(Integer, primary_key=True, autoincrement=True)
-
 
 
     master_id = Column(
@@ -793,7 +739,6 @@ class PartCategory(Base):
         nullable=False,
         index=True,
     )
-
 
 
     parent_id = Column(
@@ -804,20 +749,11 @@ class PartCategory(Base):
     )
 
 
-
     name = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 
 
-
-    created_at = Column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
-        nullable=False,
-    )
-
-
-
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
         default=datetime.utcnow,
@@ -826,17 +762,12 @@ class PartCategory(Base):
     )
 
 
-
     master = relationship("Master")
-
-
-
     parent = relationship(
         "PartCategory",
         remote_side=[id],
         backref="children",
     )
-
 
 
     __table_args__ = (
@@ -845,17 +776,12 @@ class PartCategory(Base):
 
 
 
-# ========== Финансы: расходы, категории расходов и сделки перепродажи ==========
-
-
 
 class ExpenseCategory(Base):
     __tablename__ = "expense_categories"
 
 
-
     id = Column(Integer, primary_key=True, autoincrement=True)
-
 
 
     master_id = Column(
@@ -866,7 +792,6 @@ class ExpenseCategory(Base):
     )
 
 
-
     parent_id = Column(
         Integer,
         ForeignKey("expense_categories.id", ondelete="CASCADE"),
@@ -875,20 +800,11 @@ class ExpenseCategory(Base):
     )
 
 
-
     name = Column(String(100), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 
 
-
-    created_at = Column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
-        nullable=False,
-    )
-
-
-
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
         default=datetime.utcnow,
@@ -897,17 +813,12 @@ class ExpenseCategory(Base):
     )
 
 
-
     master = relationship("Master")
-
-
-
     parent = relationship(
         "ExpenseCategory",
         remote_side=[id],
         backref="children",
     )
-
 
 
     __table_args__ = (
@@ -921,9 +832,7 @@ class Expense(Base):
     __tablename__ = "expenses"
 
 
-
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-
 
 
     master_id = Column(
@@ -934,14 +843,12 @@ class Expense(Base):
     )
 
 
-
     category_id = Column(
         Integer,
         ForeignKey("expense_categories.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
-
 
 
     resale_deal_id = Column(
@@ -952,19 +859,10 @@ class Expense(Base):
     )
 
 
-
     amount = Column(Numeric(12, 2), nullable=False)
     description = Column(Text, nullable=True)
     spent_at = Column(DateTime(timezone=True), nullable=False)
-
-
-
-    created_at = Column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
-        nullable=False,
-    )
-
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
     category = relationship("ExpenseCategory")
@@ -977,9 +875,7 @@ class ResaleDeal(Base):
     __tablename__ = "resale_deals"
 
 
-
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-
 
 
     master_id = Column(
@@ -990,41 +886,39 @@ class ResaleDeal(Base):
     )
 
 
-
     title = Column(String(255), nullable=False)
     status = Column(String(32), default="purchased", nullable=False)
-
 
 
     purchase_amount = Column(Numeric(12, 2), default=0, nullable=False)
     sale_amount = Column(Numeric(12, 2), default=0, nullable=False)
 
 
-
     purchased_at = Column(DateTime(timezone=True), nullable=True)
     sold_at = Column(DateTime(timezone=True), nullable=True)
-
 
 
     notes = Column(Text, nullable=True)
 
 
-
-    created_at = Column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
+    public_id = Column(
+        PGUUID(as_uuid=True),
+        default=uuid.uuid4,
         nullable=False,
+        unique=True,
     )
 
 
+    warranty_months = Column(Integer, nullable=True)
 
+
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
         nullable=False,
     )
-
 
 
     parts = relationship(
@@ -1042,8 +936,8 @@ class ResaleDeal(Base):
     )
 
 
-
     resale_item = relationship("Part")
+
 
 
 
@@ -1051,9 +945,7 @@ class ResaleDealPart(Base):
     __tablename__ = "resale_deal_parts"
 
 
-
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-
 
 
     deal_id = Column(
@@ -1064,14 +956,12 @@ class ResaleDealPart(Base):
     )
 
 
-
     part_id = Column(
         BigInteger,
         ForeignKey("part.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
-
 
 
     batch_id = Column(
@@ -1082,11 +972,9 @@ class ResaleDealPart(Base):
     )
 
 
-
     quantity = Column(Integer, nullable=False)
     unit_cost = Column(Numeric(12, 2), nullable=False)
     total_cost = Column(Numeric(12, 2), nullable=False)
-
 
 
     deal = relationship("ResaleDeal", back_populates="parts")
