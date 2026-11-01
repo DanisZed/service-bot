@@ -29,6 +29,7 @@ from app.api.max_miniapp import router as max_miniapp_router
 from app.api.parts import router as parts_router
 from app.api.suppliers import router as suppliers_router
 from app.api.finance import router as finance_router
+from app.api.incomes import router as incomes_router
 
 
 PANEL_BASE_URL = os.getenv("PANEL_BASE_URL", "https://app.rbt-crm.ru")
@@ -87,3 +88,4 @@ app.include_router(max_miniapp_router)
 app.include_router(parts_router)
 app.include_router(suppliers_router)
 app.include_router(finance_router)
+app.include_router(incomes_router)

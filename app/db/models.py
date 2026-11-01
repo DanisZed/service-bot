@@ -289,8 +289,10 @@ class Master(Base):
         cascade="all, delete-orphan",
     )
 
+    income_sources = relationship("IncomeSource", back_populates="master")
+    incomes = relationship("Income", back_populates="master")
 
-
+    
 
 class MasterSocialLink(Base):
     __tablename__ = "master_social_link"
@@ -948,6 +950,8 @@ class ResaleDeal(Base):
 
     master = relationship("Master")
 
+    incomes = relationship("Income", back_populates="resale_deal")
+
 
 
 
@@ -990,3 +994,33 @@ class ResaleDealPart(Base):
     deal = relationship("ResaleDeal", back_populates="parts")
     part = relationship("Part")
     batch = relationship("PartBatch")
+
+
+class IncomeSource(Base):
+    __tablename__ = "income_source"
+
+    id = Column(Integer, primary_key=True, index=True)
+    master_id = Column(Integer, ForeignKey("master.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+    master = relationship("Master", back_populates="income_sources")
+    incomes = relationship("Income", back_populates="source")
+
+
+class Income(Base):
+    __tablename__ = "income"
+
+    id = Column(Integer, primary_key=True, index=True)
+    master_id = Column(Integer, ForeignKey("master.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_id = Column(Integer, ForeignKey("income_source.id", ondelete="RESTRICT"), nullable=False, index=True)
+    resale_deal_id = Column(Integer, ForeignKey("resale_deals.id", ondelete="SET NULL"), nullable=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    description = Column(Text, nullable=True)
+    received_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+    master = relationship("Master", back_populates="incomes")
+    source = relationship("IncomeSource", back_populates="incomes")
+    resale_deal = relationship("ResaleDeal", back_populates="incomes")
