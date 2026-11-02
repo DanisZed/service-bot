@@ -1,3 +1,5 @@
+# app/api/lead_sources.py
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Optional
@@ -22,6 +24,8 @@ class LeadSourceOut(BaseModel):
     description: Optional[str] = None
     is_active: bool
     is_advertisable: bool
+    master_id: Optional[int] = None
+    service_center_id: Optional[int] = None
 
 
 
@@ -108,6 +112,8 @@ async def get_sources(
             description=s.description,
             is_active=s.is_active,
             is_advertisable=s.is_advertisable,
+            master_id=source.master_id,
+            service_center_id=source.service_center_id,
         )
         for s in sources
     ]
@@ -165,6 +171,8 @@ async def create_source(
         description=source.description,
         is_active=source.is_active,
         is_advertisable=source.is_advertisable,
+        master_id=source.master_id,
+        service_center_id=source.service_center_id,
     )
 
 
@@ -244,6 +252,8 @@ async def update_source(
         description=source.description,
         is_active=source.is_active,
         is_advertisable=source.is_advertisable,
+        master_id=source.master_id,
+        service_center_id=source.service_center_id,
     )
 
 
