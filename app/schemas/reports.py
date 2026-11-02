@@ -48,6 +48,14 @@ class ExpenseCategoryOut(BaseModel):
 
 
 
+class AdvertisingSourceOut(BaseModel):
+    source_id: int
+    source_name: str
+    amount: float
+
+
+
+
 class DailyFinanceOut(BaseModel):
     date: date
     revenue: float
