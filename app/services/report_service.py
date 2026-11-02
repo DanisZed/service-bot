@@ -178,6 +178,19 @@ async def build_finance(
     )
 
 
+    paid_amount = sum(
+        to_money(request.paid_amount)
+        for request in requests
+    )
+
+
+    receivables = service_revenue - paid_amount
+
+
+    if receivables < 0:
+        receivables = Decimal("0")
+
+
     parts_cost = Decimal("0")
     parts_by_request: Dict[int, Decimal] = {}
 
@@ -205,6 +218,19 @@ async def build_finance(
                 )
                 + item_cost
             )
+
+
+    additional_costs = sum(
+        to_money(request.parts_cost)
+        for request in requests
+    )
+
+
+    gross_margin = (
+        service_revenue
+        - parts_cost
+        - additional_costs
+    )
 
 
     purchases_result = await db.execute(
@@ -262,7 +288,9 @@ async def build_finance(
     )
 
 
-    advertising_budgets = advertising_result.scalars().unique().all()
+    advertising_budgets = (
+        advertising_result.scalars().unique().all()
+    )
 
 
     advertising_expenses = sum(
@@ -335,6 +363,7 @@ async def build_finance(
         service_revenue
         + resale_revenue
         - parts_cost
+        - additional_costs
         - resale_cost
         - other_expenses
         - advertising_expenses
@@ -373,6 +402,7 @@ async def build_finance(
             {
                 "revenue": Decimal("0"),
                 "parts_cost": Decimal("0"),
+                "additional_costs": Decimal("0"),
                 "expenses": Decimal("0"),
             },
         )
@@ -382,6 +412,9 @@ async def build_finance(
         day_data["parts_cost"] += parts_by_request.get(
             request.id,
             Decimal("0"),
+        )
+        day_data["additional_costs"] += to_money(
+            request.parts_cost
         )
 
 
@@ -394,6 +427,7 @@ async def build_finance(
             {
                 "revenue": Decimal("0"),
                 "parts_cost": Decimal("0"),
+                "additional_costs": Decimal("0"),
                 "expenses": Decimal("0"),
             },
         )
@@ -414,10 +448,14 @@ async def build_finance(
                 "date": day,
                 "revenue": float(day_data["revenue"]),
                 "parts_cost": float(day_data["parts_cost"]),
+                "additional_costs": float(
+                    day_data["additional_costs"]
+                ),
                 "expenses": float(day_data["expenses"]),
                 "net_profit": float(
                     day_data["revenue"]
                     - day_data["parts_cost"]
+                    - day_data["additional_costs"]
                     - day_data["expenses"]
                 ),
             }
@@ -428,12 +466,16 @@ async def build_finance(
         "completed_requests": len(requests),
         "service_revenue": float(service_revenue),
         "parts_cost": float(parts_cost),
+        "additional_costs": float(additional_costs),
+        "gross_margin": float(gross_margin),
         "resale_revenue": float(resale_revenue),
         "resale_cost": float(resale_cost),
         "parts_purchases": float(parts_purchases),
         "other_expenses": float(other_expenses),
         "advertising_expenses": float(advertising_expenses),
         "net_profit": float(net_profit),
+        "paid_amount": float(paid_amount),
+        "receivables": float(receivables),
         "expenses_by_category": [
             {
                 "category": category,
@@ -568,6 +610,7 @@ async def build_masters_report(
                 "requests_count": 0,
                 "revenue": Decimal("0"),
                 "parts_cost": Decimal("0"),
+                "additional_costs": Decimal("0"),
             },
         )
 
@@ -578,6 +621,9 @@ async def build_masters_report(
             request.id,
             Decimal("0"),
         )
+        item["additional_costs"] += to_money(
+            request.parts_cost
+        )
 
 
     result = []
@@ -585,12 +631,16 @@ async def build_masters_report(
 
     for item in report.values():
         gross_margin = (
-            item["revenue"] - item["parts_cost"]
+            item["revenue"]
+            - item["parts_cost"]
+            - item["additional_costs"]
         )
 
 
         dispatcher_fee = (
-            gross_margin * dispatcher_percent / Decimal("100")
+            gross_margin
+            * dispatcher_percent
+            / Decimal("100")
         )
 
 
@@ -604,6 +654,9 @@ async def build_masters_report(
                 "requests_count": item["requests_count"],
                 "revenue": float(item["revenue"]),
                 "parts_cost": float(item["parts_cost"]),
+                "additional_costs": float(
+                    item["additional_costs"]
+                ),
                 "gross_margin": float(gross_margin),
                 "dispatcher_fee": float(dispatcher_fee),
                 "net_profit": float(net_profit),

@@ -60,6 +60,7 @@ class DailyFinanceOut(BaseModel):
     date: date
     revenue: float
     parts_cost: float
+    additional_costs: float
     expenses: float
     net_profit: float
 
@@ -70,12 +71,16 @@ class FinanceOut(BaseModel):
     completed_requests: int
     service_revenue: float
     parts_cost: float
+    additional_costs: float
+    gross_margin: float
     resale_revenue: float
     resale_cost: float
     parts_purchases: float
     other_expenses: float
     advertising_expenses: float
     net_profit: float
+    paid_amount: float
+    receivables: float
     expenses_by_category: List[ExpenseCategoryOut]
     advertising_by_source: List[AdvertisingSourceOut]
     daily: List[DailyFinanceOut]
@@ -89,6 +94,7 @@ class MasterReportOut(BaseModel):
     requests_count: int
     revenue: float
     parts_cost: float
+    additional_costs: float
     gross_margin: float
     dispatcher_fee: float
     net_profit: float
@@ -103,11 +109,3 @@ class ReportSummaryOut(BaseModel):
     inventory: InventoryOut
     finance: FinanceOut
     masters: List[MasterReportOut]
-
-
-
-
-class AdvertisingSourceOut(BaseModel):
-    source_id: int
-    source_name: str
-    amount: float
