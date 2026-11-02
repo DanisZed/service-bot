@@ -131,6 +131,11 @@ class PartCategoryCreate(BaseModel):
 
 
 
+class PartCategoryUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+
 class PartCategoryOut(BaseModel):
     id: int
     name: str
@@ -337,6 +342,103 @@ async def create_part_category(
 
 
     db.add(category)
+    await db.commit()
+    await db.refresh(category)
+
+
+    return PartCategoryOut(
+        id=category.id,
+        name=category.name,
+        parent_id=category.parent_id,
+    )
+
+
+
+@router.patch("/categories/{category_id}", response_model=PartCategoryOut)
+async def update_part_category(
+    category_id: int,
+    payload: PartCategoryUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_master: Master = Depends(get_current_master),
+):
+    name = payload.name.strip()
+
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Название категории обязательно"
+        )
+
+
+    result = await db.execute(
+        select(PartCategory).where(
+            PartCategory.id == category_id,
+            PartCategory.master_id == current_master.id,
+        )
+    )
+    category = result.scalar_one_or_none()
+
+
+    if not category:
+        raise HTTPException(
+            status_code=404,
+            detail="Категория не найдена"
+        )
+
+
+    duplicate_result = await db.execute(
+        select(PartCategory).where(
+            PartCategory.master_id == current_master.id,
+            PartCategory.parent_id == category.parent_id,
+            PartCategory.id != category.id,
+            func.lower(PartCategory.name) == name.lower(),
+        )
+    )
+    duplicate = duplicate_result.scalar_one_or_none()
+
+
+    if duplicate:
+        if category.parent_id is None:
+            detail = "Такая категория уже существует"
+        else:
+            detail = "Такая подкатегория уже существует"
+
+
+        raise HTTPException(status_code=400, detail=detail)
+
+
+    old_name = category.name
+    category.name = name
+
+
+    parts_result = await db.execute(
+        select(Part).where(
+            Part.master_id == current_master.id,
+            Part.category == old_name,
+        )
+    )
+    parts = parts_result.scalars().all()
+
+
+    for part in parts:
+        part.category = name
+
+
+    if category.parent_id is not None:
+        subcategory_parts_result = await db.execute(
+            select(Part).where(
+                Part.master_id == current_master.id,
+                Part.subcategory == old_name,
+            )
+        )
+        subcategory_parts = subcategory_parts_result.scalars().all()
+
+
+        for part in subcategory_parts:
+            part.subcategory = name
+
+
     await db.commit()
     await db.refresh(category)
 
