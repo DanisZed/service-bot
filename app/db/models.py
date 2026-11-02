@@ -624,6 +624,7 @@ class Part(Base):
 
 
     category = Column(String(100), nullable=False)
+    subcategory = Column(String(100), nullable=True, index=True)
     name = Column(Text, nullable=False)
     item_type = Column(String(32), nullable=False, default="part")
     is_active = Column(Boolean, default=True, nullable=False)

@@ -42,6 +42,7 @@ router = APIRouter(prefix="/api/parts", tags=["parts"])
 class PartOut(BaseModel):
     id: int
     category: str
+    subcategory: Optional[str] = None
     name: str
     item_type: str
     quantity: int
@@ -77,6 +78,7 @@ class PartDetailOut(PartOut):
 class PartCreate(BaseModel):
     category: str
     name: str
+    subcategory: Optional[str] = None
     item_type: str = "part"
     quantity: int
     purchase_price: float
@@ -87,6 +89,7 @@ class PartCreate(BaseModel):
 
 class PartUpdate(BaseModel):
     category: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    subcategory: Optional[str] = Field(default=None, max_length=100)
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     is_active: Optional[bool] = None
 
@@ -148,6 +151,7 @@ def serialize_part(part: Part) -> dict:
     return {
         "id": part.id,
         "category": part.category,
+        "subcategory": part.subcategory,
         "name": part.name,
         "item_type": part.item_type,
         "quantity": total_quantity,
@@ -447,6 +451,11 @@ async def create_part(
     part = Part(
         master_id=current_master.id,
         category=payload.category.strip(),
+        subcategory=(
+            payload.subcategory.strip()
+            if payload.subcategory
+            else None
+        ),
         name=payload.name.strip(),
         item_type=payload.item_type,
         created_at=now,
@@ -520,6 +529,14 @@ async def update_part(
 
     if payload.category is not None:
         part.category = payload.category.strip()
+
+    
+    if payload.subcategory is not None:
+        part.subcategory = (
+            payload.subcategory.strip()
+            if payload.subcategory
+            else None
+        )
 
 
     if payload.name is not None:
