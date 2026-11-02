@@ -112,8 +112,8 @@ async def get_sources(
             description=s.description,
             is_active=s.is_active,
             is_advertisable=s.is_advertisable,
-            master_id=source.master_id,
-            service_center_id=source.service_center_id,
+            master_id=s.master_id,
+            service_center_id=s.service_center_id,
         )
         for s in sources
     ]
